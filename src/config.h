@@ -130,7 +130,7 @@
 // ---------------------------------------------------------------------------
 // Display mode — what the device shows
 //   0 = stock / crypto ticker (per-symbol source, see SRC_* below)
-//   1 = Claude usage meter (mascot + 5h/7d usage bars, fed by the daemon/)
+//   1 = Claude usage meter (5h/7d usage bars + idle face, fed by the daemon/)
 //   2 = plane radar
 //   3 = carousel: rotate through the ticked features on a timer
 // ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@
 #endif
 
 // Claude usage mode: once data stops arriving for this long (PC asleep, daemon
-// stopped, network down) the screen switches from the stats to the idle mascot
+// stopped, network down) the screen switches from the stats to the idle face
 // animation. Effective timeout also scales with the poll period (see main.cpp).
 #define USAGE_STALE_GRACE_MS  20000UL
 

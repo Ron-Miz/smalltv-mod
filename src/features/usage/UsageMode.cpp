@@ -2,7 +2,7 @@
 #include <Arduino_GFX_Library.h>
 #include "Gfx.h"
 #include "UsageClient.h"
-#include "Mascot.h"
+#include "ClaudeFace.h"
 
 UsageMode g_usageMode;
 
@@ -15,34 +15,31 @@ UsageMode g_usageMode;
 #define C_BARBG   gfxTint(0x2945)   // unfilled bar track 0x2a2a28
 #define C_DIM     gfxTint(0xB574)   // secondary text 0xb0aea5
 
-// Mascot diff state for the flicker-free full-screen idle animation.
-static bool            s_mascotPrimed  = false;
-static const uint16_t* s_mascotPalette = nullptr;
-static uint8_t         s_prevCells[MASCOT_GRID * MASCOT_GRID];
-
-// Copy a mascot palette into a local RAM array using *byte* reads. pgm_read_byte
-// is safe from both RAM and flash; a 16-bit load straight from flash (irom) faults
-// on the ESP8266, so this never depends on where the palette actually lives.
-// Tinted on the way out so the mascot's own palette follows the Display tab's
-// colour correction like everything else.
-static void loadPalette(const uint16_t* palette, uint16_t* out) {
-  const uint8_t* p = (const uint8_t*)palette;
-  for (int k = 0; k < MASCOT_PALETTE_SIZE; k++)
-    out[k] = gfxTint((uint16_t)(pgm_read_byte(p + 2 * k) | (pgm_read_byte(p + 2 * k + 1) << 8)));
-}
-
-// Draw a 20x20 mascot frame at (x0,y0), cellPx per cell. Reads PROGMEM frame data.
-static void blitMascot(Arduino_GFX* gfx, const uint8_t* cells, const uint16_t* palette,
-                       int x0, int y0, int cellPx) {
-  uint16_t pal[MASCOT_PALETTE_SIZE];
-  loadPalette(palette, pal);
-  for (int i = 0; i < MASCOT_GRID * MASCOT_GRID; i++) {
-    uint8_t code = pgm_read_byte(&cells[i]);
-    uint16_t color = (code < MASCOT_PALETTE_SIZE) ? pal[code] : 0;
-    int gx = i % MASCOT_GRID, gy = i / MASCOT_GRID;
-    gfx->fillRect(x0 + gx * cellPx, y0 + gy * cellPx, cellPx, cellPx, color);
+// The idle face draws through FaceCanvas (ClaudeFace.h) rather than touching
+// Arduino_GFX directly, which is what lets tools/face_sim.cpp link the same
+// renderer on a PC and replay the animation without a device. This adapter is
+// the whole of the device side: two calls, forwarded.
+class GfxFaceCanvas : public FaceCanvas {
+ public:
+  explicit GfxFaceCanvas(Arduino_GFX* g) : g_(g) {}
+  void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c) override {
+    g_->fillRect(x, y, w, h, c);
   }
-}
+  void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c) override {
+    g_->drawLine(x0, y0, x1, y1, c);
+  }
+ private:
+  Arduino_GFX* g_;
+};
+
+// ClaudeFace hard-codes the panel it was drawn for; every target's config.h
+// agrees, but say so here rather than letting a future 240x280 variant slide.
+static_assert(FACE_W == TFT_WIDTH && FACE_H == TFT_HEIGHT,
+              "ClaudeFace geometry assumes the 240x240 panel");
+
+// True while the face's field is already painted, so a tick repaints only the
+// band the eyes move in instead of the whole screen.
+static bool s_facePrimed = false;
 
 static void fmtReset(int mins, char* out, size_t n) {
   if (mins <= 0) { strlcpy(out, "now", n); return; }
@@ -105,11 +102,12 @@ static void drawUsage(const UsageData& u, bool fullRepaint) {
   if (!gfx) return;
 
   if (fullRepaint) {
-    s_mascotPrimed = false;   // force a full redraw next time the idle animation shows
+    s_facePrimed = false;   // force a full redraw next time the idle face shows
     gfx->fillScreen(C_BLACK);
 
-    // Header: a small calm mascot pose + title.
-    blitMascot(gfx, mascotIdleCells(), mascotIdlePalette(), 6, 4, 2);
+    // Header: the same pair of eyes at badge scale + title.
+    GfxFaceCanvas fc(gfx);
+    faceBadge(fc, 6, 4, C_ACCENT);
     gfx->setTextSize(3);
     gfx->setTextColor(C_WHITE);
     gfx->setCursor(56, 12);
@@ -140,31 +138,16 @@ static void drawUsage(const UsageData& u, bool fullRepaint) {
   drawMeter(gfx, 138, "7d", u.weeklyPct,  u.weeklyResetMin);
 }
 
-// Idle animation: full-screen mascot, diffed cell-by-cell for a flicker-free draw.
-static void drawMascot(const uint8_t* cells, const uint16_t* palette, bool restart) {
+// Idle screen: the Claude face on a full-screen terra-cotta field. `restart`
+// repaints the whole field; otherwise only the band the eyes occupy is redrawn,
+// which is what keeps the animation flicker-free on a panel with no framebuffer.
+static void drawFace(bool restart) {
   Arduino_GFX* gfx = gfxDev();
-  if (!gfx || !cells || !palette) return;
-  uint16_t pal[MASCOT_PALETTE_SIZE];
-  loadPalette(palette, pal);
-  const int CP = TFT_WIDTH / MASCOT_GRID;                 // 240 / 20 = 12
-  const int x0 = (TFT_WIDTH  - MASCOT_GRID * CP) / 2;
-  const int y0 = (TFT_HEIGHT - MASCOT_GRID * CP) / 2;
-
-  // Full redraw on (re)entry or whenever the palette changes (animation switch);
-  // otherwise only repaint the cells that changed since the last frame.
-  bool full = restart || !s_mascotPrimed || palette != s_mascotPalette;
-  if (full) gfx->fillScreen(C_BLACK);
-
-  for (int i = 0; i < MASCOT_GRID * MASCOT_GRID; i++) {
-    uint8_t code = pgm_read_byte(&cells[i]);
-    if (!full && code == s_prevCells[i]) continue;
-    s_prevCells[i] = code;
-    uint16_t color = (code < MASCOT_PALETTE_SIZE) ? pal[code] : 0;
-    int gx = i % MASCOT_GRID, gy = i / MASCOT_GRID;
-    gfx->fillRect(x0 + gx * CP, y0 + gy * CP, CP, CP, color);
-  }
-  s_mascotPrimed  = true;
-  s_mascotPalette = palette;
+  if (!gfx) return;
+  GfxFaceCanvas fc(gfx);
+  const bool full = restart || !s_facePrimed;
+  faceRender(fc, C_ACCENT, C_BLACK, full);
+  s_facePrimed = true;
 }
 
 // The daemon re-POSTs on a fixed timer even when nothing changed, and
@@ -194,10 +177,9 @@ void UsageMode::rememberContent(const UsageData& u) {
 // ---- DisplayMode ----------------------------------------------------------
 void UsageMode::begin(const Settings& s) {
   usageInit(s);
-  mascotInit();
-  usageSampled_ = 0;
+  faceReset(millis());
   usageRenderedOk_ = 0xFFFFFFFF;
-  showingMascot_ = false;
+  showingFace_ = false;
   needRender_ = true;
   contentPrimed_ = false;
   layoutPrimed_ = false;
@@ -205,7 +187,7 @@ void UsageMode::begin(const Settings& s) {
 
 void UsageMode::invalidate(const Settings& s) {
   needRender_ = true;
-  showingMascot_ = false;
+  showingFace_ = false;
   usageRenderedOk_ = 0xFFFFFFFF;
   contentPrimed_ = false;
   layoutPrimed_ = false;
@@ -221,18 +203,12 @@ void UsageMode::service(const Settings& s) {
 
   const UsageData& u = usageGet();
 
-  // Feed the burn-rate tracker once per fresh reading (drives the mascot's mood).
-  if (u.valid && u.lastOkMs != usageSampled_) {
-    usageSampled_ = u.lastOkMs;
-    mascotSample(u.sessionPct);
-  }
-
   // Considered stale after ~2 missed polls (plus a grace) — then show the animation.
   uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 2UL + USAGE_STALE_GRACE_MS;
 
   if (usageFresh(staleMs)) {
     bool fullRepaint = !layoutPrimed_;
-    if (showingMascot_) { showingMascot_ = false; needRender_ = true; fullRepaint = true; }
+    if (showingFace_) { showingFace_ = false; needRender_ = true; fullRepaint = true; }
     if (u.lastOkMs != usageRenderedOk_) {
       usageRenderedOk_ = u.lastOkMs;
       if (contentChanged(u)) {
@@ -247,13 +223,13 @@ void UsageMode::service(const Settings& s) {
       needRender_ = false;
     }
   } else {
-    if (!showingMascot_) {
-      showingMascot_ = true;
+    if (!showingFace_) {
+      showingFace_ = true;
       usageRenderedOk_ = 0xFFFFFFFF;
-      mascotReset();
-      drawMascot(mascotCells(), mascotPalette(), /*restart=*/true);
-    } else if (mascotTick()) {
-      drawMascot(mascotCells(), mascotPalette(), /*restart=*/false);
+      faceReset(millis());
+      drawFace(/*restart=*/true);
+    } else if (faceTick(millis())) {
+      drawFace(/*restart=*/false);
     }
   }
 }

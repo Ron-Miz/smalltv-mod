@@ -3,7 +3,7 @@
 // Three features, each a self-contained DisplayMode (see Mode.h), picked in the
 // web UI and dispatched from the registry below:
 //   - Ticker (features/ticker):  stock/crypto price, % change, sparkline.
-//   - Usage  (features/usage):   Claude 5h/7d usage bars + animated mascot.
+//   - Usage  (features/usage):   Claude 5h/7d usage bars + animated idle face.
 //   - Radar  (features/radar):   live ADS-B plane radar (compiled in when WITH_RADAR).
 // Shared plumbing (WiFi, web UI, OTA, display core, settings) lives at src root.
 //

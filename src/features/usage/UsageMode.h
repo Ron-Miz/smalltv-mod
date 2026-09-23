@@ -1,8 +1,8 @@
 // UsageMode.h — Claude usage meter feature.
 //
-// Shows 5h/7d usage bars + a small mascot when data is flowing, and an animated
-// pixel-art mascot when the daemon goes quiet. Owns its fetch (UsageClient), its
-// mascot animation (Mascot) and its render/dirty state.
+// Shows 5h/7d usage bars while data is flowing, and the idle Claude face — two
+// eyes that wiggle, blink and squint — once the daemon goes quiet. Owns its
+// fetch (UsageClient), the face animation (ClaudeFace) and its render state.
 #pragma once
 #include "Mode.h"
 #include "config.h"
@@ -17,16 +17,21 @@ class UsageMode : public DisplayMode {
   void service(const Settings& s) override;
   void invalidate(const Settings& s) override;
   // repaint only (no refetch) — another mode may have drawn over the screen since,
-  // so force the full layout back in, not just a value diff
-  void wake(const Settings& s) override { needRender_ = true; layoutPrimed_ = false; }
+  // so force the full layout back in, not just a value diff. Dropping
+  // showingFace_ does the same for the idle face: it comes back through the
+  // full-field repaint rather than ticking a band over the outgoing mode's screen.
+  void wake(const Settings& s) override {
+    needRender_ = true;
+    layoutPrimed_ = false;
+    showingFace_ = false;
+  }
 
  private:
   bool contentChanged(const UsageData& u) const;
   void rememberContent(const UsageData& u);
 
-  uint32_t usageSampled_ = 0;              // lastOkMs already fed to the mascot tracker
   uint32_t usageRenderedOk_ = 0xFFFFFFFF;
-  bool     showingMascot_ = false;
+  bool     showingFace_ = false;           // the idle face owns the screen
   bool     needRender_ = true;
 
   // Last content actually painted — compared in contentChanged() instead of
