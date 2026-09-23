@@ -8,6 +8,9 @@
 #include "OtaUpdate.h"
 #include "StockClient.h"
 #include "UsageClient.h"
+#if WITH_USAGE
+#include "ClaudeFace.h"
+#endif
 #if WITH_RADAR
 #include "RadarClient.h"
 #endif
@@ -117,6 +120,9 @@ static void handleStatus() {
   o["contstk"] = platformFreeContStack();   // primary stack headroom (ESP8266)
   o["uptime"] = millis() / 1000;
   o["reset"] = appResetReason();
+#if WITH_USAGE
+  o["face"] = faceMoodName();   // ambient session state, "idle" unless pushed
+#endif
   o["synced"] = clockSynced();
   { String ts = clockTimeStr(); if (ts.length()) o["time"] = ts; }
   o["tz"]        = S->clock.tz;
@@ -377,6 +383,54 @@ static void handleUsagePush() {
 // send credentials, and taking over the whole screen is not something to leave
 // open on a device you deliberately locked.
 #if WITH_NOTIFY
+#if WITH_USAGE
+// POST /api/face {"state":"thinking","ttl":120}
+//
+// Ambient session state for the Claude usage screen: `state` re-weights which
+// eye routines play and how long the rests run, so the panel reads as busy,
+// restless or calm from across a room without an overlay interrupting whatever
+// is on it. A non-idle state also takes the usage screen from the numbers,
+// which is what makes it visible on a device that runs the daemon.
+//
+// `ttl` (seconds, optional) overrides the state's own timeout. Whichever
+// applies, the state lapses back to idle once nothing refreshes it — a hook
+// script that dies mid-session leaves the panel looking busy for minutes, not
+// forever. Behind the same auth as the rest of the API: unlike the daemon's
+// push, a hook can carry credentials.
+static void handleFace() {
+  if (!requireAuth()) return;
+  if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain"))) {
+    server.send(400, "text/plain", "bad json");
+    return;
+  }
+
+  const char* state = doc["state"];
+  int m = faceMoodFind(state);
+  if (m < 0) {
+    // Name the valid set rather than just refusing: the table is the contract,
+    // and a script author should not have to read the firmware to find it.
+    String err = F("{\"ok\":false,\"error\":\"unknown state\",\"states\":[");
+    for (uint8_t i = 0; i < FACE_MOOD_COUNT; i++) {
+      if (i) err += ',';
+      err += '"'; err += faceMoodNameAt(i); err += '"';
+    }
+    err += "]}";
+    server.send(400, "application/json", err);
+    return;
+  }
+
+  uint32_t ttlMs = (uint32_t)(doc["ttl"] | 0) * 1000UL;
+  faceSetMood((uint8_t)m, millis(), ttlMs);
+
+  String body = F("{\"ok\":true,\"state\":\"");
+  body += faceMoodName();
+  body += "\"}";
+  server.send(200, "application/json", body);
+}
+#endif
+
 static void handleNotify() {
   if (!requireAuth()) return;
   if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
@@ -488,6 +542,9 @@ void webPortalBegin(Settings& settings) {
   server.on("/api/checkupdate", HTTP_GET, handleCheckUpdate);
   server.on("/api/selfupdate", HTTP_POST, handleSelfUpdate);
   server.on("/api/usage", HTTP_POST, handleUsagePush);   // daemon pushes usage here
+#if WITH_USAGE
+  server.on("/api/face", HTTP_POST, handleFace);         // Claude session state -> the idle face
+#endif
 #if WITH_HA
   server.on("/api/ha/clear", HTTP_POST, handleHaClear);  // purge HA screens (device + broker retained)
 #endif

@@ -207,10 +207,17 @@ void UsageMode::service(const Settings& s) {
 
   const UsageData& u = usageGet();
 
-  // Considered stale after ~2 missed polls (plus a grace) — then show the animation.
+  // Considered stale after ~2 missed polls (plus a grace) — then show the face.
   uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 2UL + USAGE_STALE_GRACE_MS;
 
-  if (usageFresh(staleMs)) {
+  // A pushed mood takes the screen even while the numbers are still fresh.
+  // Without that the face would hardly ever be seen on a device running the
+  // daemon — which is the same device most likely to be sitting beside a live
+  // Claude session, where the mood is the more interesting of the two. When the
+  // mood lapses back to idle the bars come straight back.
+  const bool moodHasScreen = (faceMood() != FACE_MOOD_IDLE);
+
+  if (usageFresh(staleMs) && !moodHasScreen) {
     bool fullRepaint = !layoutPrimed_;
     if (showingFace_) { showingFace_ = false; needRender_ = true; fullRepaint = true; }
     if (u.lastOkMs != usageRenderedOk_) {

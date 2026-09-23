@@ -14,7 +14,12 @@
 // Build and run from the repo root:
 //     c++ -std=c++11 -O2 -Isrc/features/usage \
 //         tools/face_sim.cpp src/features/usage/ClaudeFace.cpp -o /tmp/face_sim
-//     /tmp/face_sim <outdir> [poses] [seed]
+//     /tmp/face_sim <outdir> [poses] [seed] [mood]
+//
+// `mood` is a state name from ClaudeFace's own table (idle / thinking /
+// working / waiting / done / error). It is pinned for the whole recording with
+// a TTL far longer than the run, so the review shows the mood steadily rather
+// than watching it lapse back to idle halfway through.
 //
 // This is a review tool, not part of any firmware image.
 #include "ClaudeFace.h"
@@ -85,19 +90,25 @@ int main(int argc, char** argv) {
   const std::string out = argc > 1 ? argv[1] : ".";
   const int   poses = argc > 2 ? atoi(argv[2]) : 100;
   const uint32_t seed = argc > 3 ? (uint32_t)strtoul(argv[3], 0, 10) : 20260923u;
+  const char* moodName = argc > 4 ? argv[4] : "idle";
+
+  const int mood = faceMoodFind(moodName);
+  if (mood < 0) { fprintf(stderr, "unknown mood: %s\n", moodName); return 2; }
 
   uint32_t now = 0;
   PixelCanvas pix;
 
   std::string json = "{\"w\":" + std::to_string(FACE_W) +
                      ",\"h\":" + std::to_string(FACE_H) +
-                     ",\"seed\":" + std::to_string(seed) + ",\"frames\":[";
+                     ",\"seed\":" + std::to_string(seed) +
+                     ",\"mood\":\"" + moodName + "\",\"frames\":[";
 
   // Pose 0 is drawn with full=true (entering the screen); every later pose with
   // full=false, exactly as UsageMode drives it. The pixel canvas therefore also
   // proves the per-eye erase leaves nothing of the previous pose behind — a
   // stale pixel would simply persist in the buffer from frame to frame.
   faceReset(now, seed);
+  faceSetMood((uint8_t)mood, now, 3600000UL);   // pinned: outlast the recording
   int maxOps = 0, totalOps = 0;
   for (int i = 0; i < poses; i++) {
     const bool full = (i == 0);
@@ -132,7 +143,7 @@ int main(int argc, char** argv) {
   fwrite(json.data(), 1, json.size(), f);
   fclose(f);
 
-  printf("%d poses, seed %u, %u ms of animation\n", poses, seed, now);
+  printf("%-9s %d poses, seed %u, %u ms of animation\n", moodName, poses, seed, now);
   printf("fills per pose: %d max, %d mean\n", maxOps, totalOps / poses);
   printf("frames -> %s\n", jp.c_str());
   return 0;
