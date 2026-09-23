@@ -17,16 +17,20 @@ UsageMode g_usageMode;
 
 // The idle face draws through FaceCanvas (ClaudeFace.h) rather than touching
 // Arduino_GFX directly, which is what lets tools/face_sim.cpp link the same
-// renderer on a PC and replay the animation without a device. This adapter is
-// the whole of the device side: two calls, forwarded.
+// renderer on a PC and replay the animation without a device.
+//
+// begin()/end() map to the driver's own transaction bracket, and the fills go
+// to writeFillRect (the unbracketed primitive) rather than fillRect, which
+// opens and closes a bus transaction per call. A squint is 140 fills, so that
+// is 140 SPI transactions collapsed into one — the difference between the
+// chevrons appearing at once and visibly drawing themselves in.
 class GfxFaceCanvas : public FaceCanvas {
  public:
   explicit GfxFaceCanvas(Arduino_GFX* g) : g_(g) {}
+  void begin() override { g_->startWrite(); }
+  void end() override   { g_->endWrite(); }
   void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c) override {
-    g_->fillRect(x, y, w, h, c);
-  }
-  void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c) override {
-    g_->drawLine(x0, y0, x1, y1, c);
+    g_->writeFillRect(x, y, w, h, c);
   }
  private:
   Arduino_GFX* g_;
@@ -177,7 +181,7 @@ void UsageMode::rememberContent(const UsageData& u) {
 // ---- DisplayMode ----------------------------------------------------------
 void UsageMode::begin(const Settings& s) {
   usageInit(s);
-  faceReset(millis());
+  faceReset(millis(), micros());
   usageRenderedOk_ = 0xFFFFFFFF;
   showingFace_ = false;
   needRender_ = true;
@@ -226,7 +230,7 @@ void UsageMode::service(const Settings& s) {
     if (!showingFace_) {
       showingFace_ = true;
       usageRenderedOk_ = 0xFFFFFFFF;
-      faceReset(millis());
+      faceReset(millis(), micros());
       drawFace(/*restart=*/true);
     } else if (faceTick(millis())) {
       drawFace(/*restart=*/false);
