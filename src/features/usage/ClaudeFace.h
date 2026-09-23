@@ -40,6 +40,34 @@ class FaceCanvas {
   virtual void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) = 0;
 };
 
+// ---------------------------------------------------------------------------
+// Moods. The face is an ambient status light as well as an idle animation: a
+// mood does not script a pose, it re-weights which routines get picked and how
+// long the rests between them run. Claude thinking looks like eyes casting
+// about; Claude working looks calm and slow; Claude waiting on you looks
+// restless. Nothing about the shapes changes, only what plays and how often —
+// which is what keeps it readable across a room without being an alert.
+// ---------------------------------------------------------------------------
+#define FACE_MOOD_IDLE     0   // nothing pushed: the balanced mix
+#define FACE_MOOD_THINKING 1
+#define FACE_MOOD_WORKING  2
+#define FACE_MOOD_WAITING  3
+#define FACE_MOOD_DONE     4
+#define FACE_MOOD_ERROR    5
+#define FACE_MOOD_COUNT    6
+
+// Name -> mood, -1 when unknown. faceMoodNameAt walks the table so a caller can
+// report the valid set without duplicating it.
+int         faceMoodFind(const char* name);
+const char* faceMoodNameAt(uint8_t mood);
+
+// Set the mood. `ttlMs` 0 takes the mood's own timeout; when it lapses without
+// another push the face falls back to FACE_MOOD_IDLE, so a hook script that
+// dies mid-session cannot leave the panel stuck looking busy forever.
+void        faceSetMood(uint8_t mood, uint32_t nowMs, uint32_t ttlMs);
+uint8_t     faceMood();
+const char* faceMoodName();
+
 // Start the animation. `seed` picks the sequence of routines: pass something
 // that differs run to run on the device, or a constant in a harness to replay
 // the same sequence. `nowMs` is millis() on the device, simulated time in the

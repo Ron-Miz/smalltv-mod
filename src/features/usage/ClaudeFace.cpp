@@ -1,4 +1,5 @@
 #include "ClaudeFace.h"
+#include <string.h>   // strcasecmp, as NotifyTypes.h matches its own presets
 
 // ---------------------------------------------------------------------------
 // Geometry — clawd-mochi's EYE_* constants.
@@ -27,10 +28,9 @@
 #define SQUISH_H    10   // the flat bar the chevrons collapse to
 #define CHEV_THK    10   // chevron half-thickness, in stacked pixel columns
 
-// Rest between routines. The spread is the point: a fixed gap would put the
-// whole face back on a cycle however random the routines themselves are.
-#define REST_MIN_MS  900
-#define REST_MAX_MS 3200
+// Mood change cut: long enough not to look like a glitch, short enough that a
+// hook firing feels immediate rather than queued behind whatever was playing.
+#define MOOD_CUT_MS  150
 
 static inline int16_t eyeLX(int16_t ox) {
   return (FACE_W - (EYE_W * 2 + EYE_GAP)) / 2 + EYE_OX + ox;
@@ -95,6 +95,11 @@ static const FacePose kFlutter[] = {         // two quick blinks
   {SH_SHUT, SH_SHUT, 0, 110}, {SH_OPEN, SH_OPEN, 0, 200},
 };
 
+static const FacePose kFlat[] = {              // gone flat: the error look
+  {SH_BAR,  SH_BAR,  0, 1400}, {SH_SHUT, SH_SHUT, 0, 260},
+  {SH_BAR,  SH_BAR,  0, 1800},
+};
+
 struct FaceRoutine {
   const char*     name;
   const FacePose* poses;
@@ -111,6 +116,7 @@ static const FaceRoutine kRoutines[] = {
   ROUTINE("slow blink", kSlowBlink, 0),
   ROUTINE("glance",     kGlance,    1),
   ROUTINE("flutter",    kFlutter,   0),
+  ROUTINE("flat",       kFlat,      0),
 };
 static const uint8_t kRoutineCount = sizeof(kRoutines) / sizeof(kRoutines[0]);
 
@@ -123,6 +129,28 @@ static const FacePose kRest = {SH_OPEN, SH_OPEN, 0, 0};
 // ---------------------------------------------------------------------------
 struct Box { int16_t x, y, w, h; };
 
+// A mood is a weight per routine plus the rest window between them. The rests
+// carry as much of the reading as the routines do: the same blink at a 400 ms
+// gap is restless and at a 4 s gap is calm.
+struct FaceMood {
+  const char* name;
+  uint8_t     weight[8];      // one per routine, in kRoutines order
+  uint16_t    restMin, restMax;
+  uint32_t    ttlMs;          // 0 = never lapses (idle only)
+};
+
+// Weights are relative, not percentages — a zero simply bars a routine from a
+// mood, which is how "working" never squints and "error" almost only goes flat.
+//                        wig squ win hlf slo gla flu flat
+static const FaceMood kMoods[FACE_MOOD_COUNT] = {
+  {"idle",     { 3,  2,  2,  2,  3,  3,  2,  0},  900, 3200,      0},
+  {"thinking", { 5,  0,  1,  1,  1,  6,  2,  0},  300,  900,  90000UL},
+  {"working",  { 1,  0,  0,  1,  5,  1,  0,  1}, 2000, 5000, 300000UL},
+  {"waiting",  { 4,  0,  2,  2,  0,  2,  6,  0},  200,  600, 600000UL},
+  {"done",     { 1,  6,  4,  1,  1,  0,  1,  0},  700, 1800,  60000UL},
+  {"error",    { 0,  0,  0,  1,  2,  0,  0, 12}, 1500, 3500, 180000UL},
+};
+
 static uint32_t s_rng      = 1;
 static uint8_t  s_routine  = 0;
 static uint8_t  s_pose     = 0;
@@ -130,6 +158,9 @@ static uint8_t  s_mirror   = 0;
 static bool     s_resting  = true;
 static uint16_t s_restHold = 0;
 static uint32_t s_stepMs   = 0;
+static uint8_t  s_mood     = FACE_MOOD_IDLE;
+static uint32_t s_moodMs   = 0;      // when the mood was last pushed
+static uint32_t s_moodTtl  = 0;      // 0 = never lapses
 static Box      s_lPrev    = {0, 0, 0, 0};   // ink the left eye last occupied
 static Box      s_rPrev    = {0, 0, 0, 0};
 
@@ -143,15 +174,39 @@ static inline uint16_t rndRange(uint16_t lo, uint16_t hi) {
   return (uint16_t)(lo + rnd() % (uint32_t)(hi - lo + 1));
 }
 
-// Never the routine that just played: back to back repeats are exactly what
-// reads as a loop. Hopping 1..n-1 picks uniformly among the others.
-static void pickRoutine() {
-  if (kRoutineCount > 1) {
-    uint8_t hop = (uint8_t)(1 + rnd() % (uint32_t)(kRoutineCount - 1));
-    s_routine = (uint8_t)((s_routine + hop) % kRoutineCount);
+// Weighted pick over the mood's table, barring the routine that just played:
+// back to back repeats are exactly what reads as a loop. When excluding it
+// leaves nothing (a mood that weights one routine almost alone, as "error"
+// does) the repeat is allowed rather than silently falling back to a routine
+// the mood had set to zero.
+static uint8_t weightedPick(const uint8_t* w, int16_t exclude) {
+  uint16_t all = 0;
+  for (uint8_t i = 0; i < kRoutineCount; i++) all = (uint16_t)(all + w[i]);
+
+  // A mood that deliberately leans on one routine gets to repeat it: barring
+  // the last pick would otherwise turn "error" into a strict alternation
+  // between going flat and whatever it was allowed to fall back to, which is
+  // the metronome the exclusion exists to prevent in the first place.
+  if (exclude >= 0 && (uint16_t)(w[exclude] * 2) > all) exclude = -1;
+
+  uint16_t total = 0;
+  for (uint8_t i = 0; i < kRoutineCount; i++)
+    if (i != exclude) total = (uint16_t)(total + w[i]);
+  if (total == 0) return (uint8_t)(exclude >= 0 ? exclude : 0);
+
+  uint16_t r = (uint16_t)(rnd() % total);
+  for (uint8_t i = 0; i < kRoutineCount; i++) {
+    if (i == exclude) continue;
+    if (r < w[i]) return i;
+    r = (uint16_t)(r - w[i]);
   }
-  s_mirror = kRoutines[s_routine].mirrors ? (uint8_t)(rnd() & 1) : 0;
-  s_pose = 0;
+  return (uint8_t)(exclude >= 0 ? exclude : 0);   // unreachable while total > 0
+}
+
+static void pickRoutine() {
+  s_routine = weightedPick(kMoods[s_mood].weight, (int16_t)s_routine);
+  s_mirror  = kRoutines[s_routine].mirrors ? (uint8_t)(rnd() & 1) : 0;
+  s_pose    = 0;
 }
 
 static inline const FacePose& curPose() {
@@ -162,6 +217,34 @@ uint16_t faceHoldMs() { return s_resting ? s_restHold : curPose().hold; }
 
 const char* faceRoutineName() { return s_resting ? "rest" : kRoutines[s_routine].name; }
 
+uint8_t     faceMood()     { return s_mood; }
+const char* faceMoodName() { return kMoods[s_mood].name; }
+const char* faceMoodNameAt(uint8_t mood) {
+  return mood < FACE_MOOD_COUNT ? kMoods[mood].name : "";
+}
+
+int faceMoodFind(const char* name) {
+  if (!name || !*name) return -1;
+  for (uint8_t i = 0; i < FACE_MOOD_COUNT; i++)
+    if (!strcasecmp(name, kMoods[i].name)) return (int)i;
+  return -1;
+}
+
+void faceSetMood(uint8_t mood, uint32_t nowMs, uint32_t ttlMs) {
+  if (mood >= FACE_MOOD_COUNT) return;
+  const bool changed = (mood != s_mood);
+  s_mood    = mood;
+  s_moodMs  = nowMs;
+  s_moodTtl = ttlMs ? ttlMs : kMoods[mood].ttlMs;
+  if (changed) {
+    // Cut to a brief rest so the new mood's routines start almost at once,
+    // rather than after however long the one mid-play still had to run.
+    s_resting  = true;
+    s_restHold = MOOD_CUT_MS;
+    s_stepMs   = nowMs;
+  }
+}
+
 void faceReset(uint32_t nowMs, uint32_t seed) {
   s_rng = (seed ^ (nowMs * 2654435761u)) | 1u;   // xorshift stalls at zero
   s_routine  = (uint8_t)(rnd() % kRoutineCount);
@@ -170,11 +253,19 @@ void faceReset(uint32_t nowMs, uint32_t seed) {
   s_resting  = true;                             // open on a calm face
   s_restHold = 800;
   s_stepMs   = nowMs;
+  // The mood is deliberately NOT cleared: it is pushed from outside and
+  // outlives the screen being entered and left.
   const Box empty = {0, 0, 0, 0};
   s_lPrev = s_rPrev = empty;
 }
 
 bool faceTick(uint32_t nowMs) {
+  // A mood that stopped being refreshed lapses back to idle. The routine
+  // mid-play is left to finish; the next pick reads the idle weights.
+  if (s_moodTtl && (nowMs - s_moodMs) >= s_moodTtl) {
+    s_mood    = FACE_MOOD_IDLE;
+    s_moodTtl = 0;
+  }
   if (nowMs - s_stepMs < faceHoldMs()) return false;
   if (s_resting) {
     s_resting = false;
@@ -183,7 +274,7 @@ bool faceTick(uint32_t nowMs) {
     s_pose++;
   } else {
     s_resting  = true;
-    s_restHold = rndRange(REST_MIN_MS, REST_MAX_MS);
+    s_restHold = rndRange(kMoods[s_mood].restMin, kMoods[s_mood].restMax);
   }
   s_stepMs = nowMs;
   return true;
