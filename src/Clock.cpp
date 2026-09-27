@@ -78,9 +78,28 @@ void clockService(const Settings& s) {
     return;
   }
   struct tm t;
-  bool inWindow = clockNow(t) &&
-      nightWindowContains(t.tm_hour * 60 + t.tm_min,
-                          (int)s.clock.nightStartMin, (int)s.clock.nightEndMin);
+  const bool haveClock = clockNow(t);
+
+  // No clock at all: the boot sync never landed. Everything below needs a local
+  // time to compare against the window, so without this the function returns at
+  // the !inWindow branch and the re-arm further down is unreachable — a device
+  // that misses its boot sync would never try again, and night mode would stay
+  // dead until someone power-cycled it. Retry on the cold cadence instead, and
+  // report held so /api/status says why night mode is not running.
+  if (!haveClock) {
+    s_nightLatched = s_nightActive = false;
+    s_nightHeld    = true;
+    if (s_lastResyncMs == 0 ||
+        (uint32_t)(millis() - s_lastResyncMs) >= NIGHT_NTP_COLD_RETRY_MS) {
+      s_lastResyncMs = millis() | 1;   // never store 0 (0 means "none yet")
+      clockForceResync(s);
+    }
+    return;
+  }
+
+  bool inWindow = nightWindowContains(t.tm_hour * 60 + t.tm_min,
+                                      (int)s.clock.nightStartMin,
+                                      (int)s.clock.nightEndMin);
   if (!inWindow) {
     // Out of the window: reset so the next night re-checks trust from scratch.
     s_nightLatched = s_nightActive = s_nightHeld = false;

@@ -132,7 +132,7 @@ static void handleStatus() {
   { String ts = clockTimeStr(); if (ts.length()) o["time"] = ts; }
   o["tz"]        = S->clock.tz;
   o["night"]     = clockNightActive();   // dimming now
-  o["nightHeld"] = clockNightHeld();      // in the window but waiting for a fresh NTP sync
+  o["nightHeld"] = clockNightHeld();      // waiting on a fresh NTP sync (in the window, or with no clock at all)
   o["clockFresh"] = clockTrusted();       // last NTP sync within the trust window
   wgStatusJson(o["wg"].to<JsonObject>()); // tunnel state (compiledIn=false where it isn't built)
 

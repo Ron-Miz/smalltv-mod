@@ -392,6 +392,12 @@
 // (morning). Once night mode has switched on, it stays on until the window ends.
 #define NIGHT_NTP_TRUST_MS      300000UL  // 5 min: max age of the sync that unlocks night
 #define NIGHT_NTP_RESYNC_MS      30000UL  // re-sync attempt cadence while held off
+// Cadence for a device whose clock was never set at all (a boot sync that never
+// landed: no route to the NTP servers, or UDP 123 filtered). Far slower than the
+// held cadence above, because that one runs only inside a night window while
+// this one runs for as long as the device is up — and a device that has been
+// waiting hours is not one where another try every 30 s helps.
+#define NIGHT_NTP_COLD_RETRY_MS 300000UL  // 5 min
 
 // Theme packages are supported on every display target except the lean
 // ESP8266 image, which opts out explicitly (see [env:smalltv_lean] in
