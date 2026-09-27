@@ -32,6 +32,14 @@
 // hook firing feels immediate rather than queued behind whatever was playing.
 #define MOOD_CUT_MS  150
 
+// Every pose is reached by a tween rather than a jump. A pose's hold from the
+// tables below is split into a morph and a rest: the morph is half the hold,
+// bounded so a 110 ms flutter still snaps and a 2 s rest does not spend two
+// seconds closing an eyelid.
+#define FACE_FRAME_MS   33   // ~30 fps while morphing; nothing is drawn at rest
+#define MORPH_MIN_MS    60
+#define MORPH_MAX_MS   220
+
 static inline int16_t eyeLX(int16_t ox) {
   return (FACE_W - (EYE_W * 2 + EYE_GAP)) / 2 + EYE_OX + ox;
 }
@@ -124,14 +132,35 @@ static const uint8_t kRoutineCount = sizeof(kRoutines) / sizeof(kRoutines[0]);
 static const FacePose kRest = {SH_OPEN, SH_OPEN, 0, 0};
 
 // ---------------------------------------------------------------------------
-// State. xorshift32 rather than the Arduino RNG, so the host harness replays a
-// seed exactly and ClaudeFace stays free of Arduino headers.
+// Parametric eye.
+//
+// Every shape the face can hold is one figure: a run of `w` columns, each a bar
+// of height `h`, with the column centres displaced vertically by up to `bend` —
+// one bar above the centre line and one below, converging at the apex.
+//
+//   bend = 0    the two bars coincide: a plain rectangle, w x h
+//   bend > 0    they separate along the run into a > or a <
+//
+// That is what makes the animation smooth. An open eye, a dropped lid and a
+// squint stop being three drawings to cut between and become three points in
+// the same (w, h, bend) space, so a blink is h falling from 60 to 6, a squint
+// is bend rising from 0 to 30, and any pose tweens into any other.
 // ---------------------------------------------------------------------------
-struct Box { int16_t x, y, w, h; };
+struct EyeGeom { int16_t w, h, bend; };
+struct Box     { int16_t x, y, w, h; };
 
-// A mood is a weight per routine plus the rest window between them. The rests
-// carry as much of the reading as the routines do: the same blink at a 400 ms
-// gap is restless and at a 4 s gap is calm.
+static const EyeGeom kShapes[4] = {
+  {EYE_W,          EYE_H,            0},           // SH_OPEN
+  {EYE_W,          BLINK_H,          0},           // SH_SHUT
+  {CHEV_REACH + 1, 2 * CHEV_THK + 1, EYE_H / 2},   // SH_CHEV
+  {EYE_W,          SQUISH_H,         0},           // SH_BAR
+};
+
+// ---------------------------------------------------------------------------
+// Moods. A mood is a weight per routine plus the rest window between them. The
+// rests carry as much of the reading as the routines do: the same blink at a
+// 400 ms gap is restless and at a 4 s gap is calm.
+// ---------------------------------------------------------------------------
 struct FaceMood {
   const char* name;
   uint8_t     weight[8];      // one per routine, in kRoutines order
@@ -151,18 +180,32 @@ static const FaceMood kMoods[FACE_MOOD_COUNT] = {
   {"error",    { 0,  0,  0,  1,  2,  0,  0, 12}, 1500, 3500, 180000UL},
 };
 
+// ---------------------------------------------------------------------------
+// State. xorshift32 rather than the Arduino RNG, so the host harness replays a
+// seed exactly and ClaudeFace stays free of Arduino headers.
+// ---------------------------------------------------------------------------
 static uint32_t s_rng      = 1;
 static uint8_t  s_routine  = 0;
 static uint8_t  s_pose     = 0;
 static uint8_t  s_mirror   = 0;
 static bool     s_resting  = true;
 static uint16_t s_restHold = 0;
-static uint32_t s_stepMs   = 0;
 static uint8_t  s_mood     = FACE_MOOD_IDLE;
 static uint32_t s_moodMs   = 0;      // when the mood was last pushed
 static uint32_t s_moodTtl  = 0;      // 0 = never lapses
-static Box      s_lPrev    = {0, 0, 0, 0};   // ink the left eye last occupied
-static Box      s_rPrev    = {0, 0, 0, 0};
+
+// Tween: the eyes travel from s_from to s_to over s_morphMs, then hold still
+// for s_holdMs. s_progress is the raw 0..255 position, eased at render time.
+static EyeGeom  s_from[2], s_to[2];
+static int16_t  s_fromOx = 0, s_toOx = 0;
+static uint8_t  s_progress   = 255;
+static uint16_t s_morphMs    = 0;
+static uint16_t s_holdMs     = 0;
+static uint32_t s_poseStart  = 0;
+static uint32_t s_lastDrawMs = 0;
+
+static Box s_lPrev = {0, 0, 0, 0};   // ink the left eye last occupied
+static Box s_rPrev = {0, 0, 0, 0};
 
 static inline uint32_t rnd() {
   s_rng ^= s_rng << 13;
@@ -175,18 +218,14 @@ static inline uint16_t rndRange(uint16_t lo, uint16_t hi) {
 }
 
 // Weighted pick over the mood's table, barring the routine that just played:
-// back to back repeats are exactly what reads as a loop. When excluding it
-// leaves nothing (a mood that weights one routine almost alone, as "error"
-// does) the repeat is allowed rather than silently falling back to a routine
-// the mood had set to zero.
+// back to back repeats are exactly what reads as a loop. A mood that leans
+// heavily on one routine gets to repeat it, though — barring the last pick
+// would otherwise turn "error" into a strict alternation between going flat and
+// whatever it was allowed to fall back to, the very metronome the exclusion
+// exists to prevent.
 static uint8_t weightedPick(const uint8_t* w, int16_t exclude) {
   uint16_t all = 0;
   for (uint8_t i = 0; i < kRoutineCount; i++) all = (uint16_t)(all + w[i]);
-
-  // A mood that deliberately leans on one routine gets to repeat it: barring
-  // the last pick would otherwise turn "error" into a strict alternation
-  // between going flat and whatever it was allowed to fall back to, which is
-  // the metronome the exclusion exists to prevent in the first place.
   if (exclude >= 0 && (uint16_t)(w[exclude] * 2) > all) exclude = -1;
 
   uint16_t total = 0;
@@ -230,6 +269,77 @@ int faceMoodFind(const char* name) {
   return -1;
 }
 
+// ---------------------------------------------------------------------------
+// Tweening
+// ---------------------------------------------------------------------------
+
+// Smoothstep, in integers: 0 and 255 map to themselves, and the curve eases in
+// and out so the eyes accelerate off a pose and settle into the next one rather
+// than tracking it at a constant speed, which reads as mechanical.
+static inline uint8_t ease(uint8_t p) {
+  return (uint8_t)(((uint32_t)p * p * (765 - 2 * (uint32_t)p)) / 65025);
+}
+
+static inline int16_t lerp16(int16_t a, int16_t b, uint8_t p) {
+  return (int16_t)(a + (((int32_t)(b - a) * p) / 255));
+}
+
+// Where the eyes are right now, between the pose they left and the one they are
+// heading for.
+static void evalNow(EyeGeom out[2], int16_t* ox) {
+  const uint8_t p = ease(s_progress);
+  for (uint8_t i = 0; i < 2; i++) {
+    out[i].w    = lerp16(s_from[i].w,    s_to[i].w,    p);
+    out[i].h    = lerp16(s_from[i].h,    s_to[i].h,    p);
+    out[i].bend = lerp16(s_from[i].bend, s_to[i].bend, p);
+  }
+  *ox = lerp16(s_fromOx, s_toOx, p);
+}
+
+// Aim the tween at the pose now current. The origin is where the eyes actually
+// are, not the pose they were nominally heading for, so a mood cut landing
+// mid-morph continues from the shape on screen instead of snapping back.
+static void armTween(uint32_t now) {
+  EyeGeom cur[2];
+  int16_t curOx;
+  evalNow(cur, &curOx);
+  s_from[0] = cur[0];
+  s_from[1] = cur[1];
+  s_fromOx  = curOx;
+
+  const FacePose& p = curPose();
+  const uint8_t lSh = s_mirror ? p.right : p.left;
+  const uint8_t rSh = s_mirror ? p.left  : p.right;
+  s_to[0]  = kShapes[lSh];
+  s_to[1]  = kShapes[rSh];
+  s_toOx   = s_mirror ? (int16_t)(-p.ox) : (int16_t)p.ox;
+
+  const uint16_t hold = faceHoldMs();
+  uint16_t morph = (uint16_t)(hold / 2);
+  if (morph < MORPH_MIN_MS) morph = MORPH_MIN_MS;
+  if (morph > MORPH_MAX_MS) morph = MORPH_MAX_MS;
+  if (morph > hold) morph = hold;          // never outrun the pose itself
+  s_morphMs = morph;
+  s_holdMs  = (uint16_t)(hold - morph);
+
+  s_progress   = 0;
+  s_poseStart  = now;
+  s_lastDrawMs = now;
+}
+
+static void stepPose(uint32_t now) {
+  if (s_resting) {
+    s_resting = false;
+    pickRoutine();
+  } else if (s_pose + 1 < kRoutines[s_routine].count) {
+    s_pose++;
+  } else {
+    s_resting  = true;
+    s_restHold = rndRange(kMoods[s_mood].restMin, kMoods[s_mood].restMax);
+  }
+  armTween(now);
+}
+
 void faceSetMood(uint8_t mood, uint32_t nowMs, uint32_t ttlMs) {
   if (mood >= FACE_MOOD_COUNT) return;
   const bool changed = (mood != s_mood);
@@ -241,7 +351,7 @@ void faceSetMood(uint8_t mood, uint32_t nowMs, uint32_t ttlMs) {
     // rather than after however long the one mid-play still had to run.
     s_resting  = true;
     s_restHold = MOOD_CUT_MS;
-    s_stepMs   = nowMs;
+    armTween(nowMs);
   }
 }
 
@@ -252,9 +362,17 @@ void faceReset(uint32_t nowMs, uint32_t seed) {
   s_mirror   = 0;
   s_resting  = true;                             // open on a calm face
   s_restHold = 800;
-  s_stepMs   = nowMs;
   // The mood is deliberately NOT cleared: it is pushed from outside and
   // outlives the screen being entered and left.
+
+  s_from[0] = s_from[1] = s_to[0] = s_to[1] = kShapes[SH_OPEN];
+  s_fromOx = s_toOx = 0;
+  s_progress   = 255;
+  s_morphMs    = 0;
+  s_holdMs     = s_restHold;
+  s_poseStart  = nowMs;
+  s_lastDrawMs = nowMs;
+
   const Box empty = {0, 0, 0, 0};
   s_lPrev = s_rPrev = empty;
 }
@@ -266,49 +384,37 @@ bool faceTick(uint32_t nowMs) {
     s_mood    = FACE_MOOD_IDLE;
     s_moodTtl = 0;
   }
-  if (nowMs - s_stepMs < faceHoldMs()) return false;
-  if (s_resting) {
-    s_resting = false;
-    pickRoutine();
-  } else if (s_pose + 1 < kRoutines[s_routine].count) {
-    s_pose++;
-  } else {
-    s_resting  = true;
-    s_restHold = rndRange(kMoods[s_mood].restMin, kMoods[s_mood].restMax);
+
+  const uint32_t el = nowMs - s_poseStart;
+
+  if (el >= (uint32_t)s_morphMs + s_holdMs) {   // pose served its time
+    stepPose(nowMs);
+    return true;
   }
-  s_stepMs = nowMs;
-  return true;
+  if (el < s_morphMs) {                          // mid-morph: draw on the frame clock
+    if (nowMs - s_lastDrawMs < FACE_FRAME_MS) return false;
+    s_progress   = (uint8_t)((el * 255UL) / s_morphMs);
+    s_lastDrawMs = nowMs;
+    return true;
+  }
+  if (s_progress != 255) {                       // land exactly on the pose, once
+    s_progress   = 255;
+    s_lastDrawMs = nowMs;
+    return true;
+  }
+  return false;                                  // at rest: nothing to draw
 }
 
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
-
-// The ink one eye occupies in a given shape, at base x. Also the erase unit:
-// a pose repaints the union of where an eye was and where it now is, instead of
-// clearing a band wide enough for every pose — which is what left the field
-// briefly blank while a squint drew itself in.
-static Box eyeBox(uint8_t shape, int16_t x) {
+static Box geomBox(const EyeGeom& g, int16_t x) {
+  const int16_t cx = (int16_t)(x + EYE_W / 2);
   Box b;
-  switch (shape) {
-    case SH_SHUT:
-      b.x = x; b.y = (int16_t)(eyeY() + EYE_H / 2 - BLINK_H / 2);
-      b.w = EYE_W; b.h = BLINK_H;
-      break;
-    case SH_BAR:
-      b.x = x; b.y = (int16_t)(eyeCY() - SQUISH_H / 2);
-      b.w = EYE_W; b.h = SQUISH_H;
-      break;
-    case SH_CHEV:
-      b.x = (int16_t)(x + EYE_W / 2 - CHEV_REACH / 2);
-      b.y = (int16_t)(eyeCY() - EYE_H / 2 - CHEV_THK);
-      b.w = (int16_t)(CHEV_REACH + 1);
-      b.h = (int16_t)(EYE_H + 2 * CHEV_THK + 1);
-      break;
-    default:
-      b.x = x; b.y = eyeY(); b.w = EYE_W; b.h = EYE_H;
-      break;
-  }
+  b.x = (int16_t)(cx - g.w / 2);
+  b.w = g.w;
+  b.y = (int16_t)(eyeCY() - g.bend - g.h / 2);
+  b.h = (int16_t)(2 * g.bend + g.h);
   return b;
 }
 
@@ -323,42 +429,37 @@ static Box unite(const Box& a, const Box& b) {
   return u;
 }
 
-// A > or < as one 1 px column per step along the arm, each column the full
-// stroke thickness. clawd-mochi stacks 2*thk+1 diagonal lines instead, which
-// draws the same shape a pixel at a time; this is the same figure in
-// (reach+1)*2 rectangle fills.
-static void drawChevron(FaceCanvas& c, int16_t cx, int16_t cy, bool rightFacing, uint16_t col) {
-  const int16_t arm = EYE_H / 2, reach = CHEV_REACH, thk = CHEV_THK;
-  const int16_t x0 = (int16_t)(cx - reach / 2);
-  const int16_t h  = (int16_t)(2 * thk + 1);
-  for (int16_t i = 0; i <= reach; i++) {
-    const int16_t dy = (int16_t)(((int32_t)i * arm) / reach);
-    const int16_t x  = rightFacing ? (int16_t)(x0 + i) : (int16_t)(x0 + reach - i);
-    c.fillRect(x, (int16_t)(cy - arm + dy - thk), 1, h, col);   // upper arm
-    c.fillRect(x, (int16_t)(cy + arm - dy - thk), 1, h, col);   // lower arm
-  }
-}
+// One eye. A flat shape (bend 0) is a single rectangle, which is the common case
+// and stays one fill; a bent one is drawn column by column, the two bars
+// converging on the apex. `apexRight` puts the point of a > on the right.
+static void drawEye(FaceCanvas& c, const EyeGeom& g, int16_t x,
+                    bool apexRight, uint16_t ink) {
+  if (g.w <= 0 || g.h <= 0) return;
+  const int16_t cx = (int16_t)(x + EYE_W / 2);
+  const int16_t cy = eyeCY();
 
-static void drawEye(FaceCanvas& c, uint8_t shape, int16_t x, bool rightFacing, uint16_t ink) {
-  if (shape == SH_CHEV) {
-    drawChevron(c, (int16_t)(x + EYE_W / 2), eyeCY(), rightFacing, ink);
+  if (g.bend <= 0) {
+    c.fillRect((int16_t)(cx - g.w / 2), (int16_t)(cy - g.h / 2), g.w, g.h, ink);
     return;
   }
-  const Box b = eyeBox(shape, x);
-  c.fillRect(b.x, b.y, b.w, b.h, ink);
+
+  const int16_t x0   = (int16_t)(cx - g.w / 2);
+  const int16_t span = (int16_t)(g.w - 1);
+  for (int16_t i = 0; i < g.w; i++) {
+    const int16_t n   = apexRight ? (int16_t)(span - i) : i;
+    const int16_t off = span > 0 ? (int16_t)(((int32_t)g.bend * n) / span) : 0;
+    c.fillRect((int16_t)(x0 + i), (int16_t)(cy - off - g.h / 2), 1, g.h, ink);
+    if (off) c.fillRect((int16_t)(x0 + i), (int16_t)(cy + off - g.h / 2), 1, g.h, ink);
+  }
 }
 
 void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full) {
-  const FacePose& p = curPose();
-
-  // A mirrored routine swaps the eyes and flips the slide, so a wink comes from
-  // whichever side was drawn this time round.
-  const uint8_t lSh = s_mirror ? p.right : p.left;
-  const uint8_t rSh = s_mirror ? p.left  : p.right;
-  const int16_t ox  = s_mirror ? (int16_t)(-p.ox) : (int16_t)p.ox;
+  EyeGeom g[2];
+  int16_t ox;
+  evalNow(g, &ox);
 
   const int16_t lx = eyeLX(ox), rx = eyeRX(ox);
-  const Box lNew = eyeBox(lSh, lx), rNew = eyeBox(rSh, rx);
+  const Box lNew = geomBox(g[0], lx), rNew = geomBox(g[1], rx);
 
   c.begin();
   if (full) {
@@ -368,8 +469,8 @@ void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full) {
     c.fillRect(le.x, le.y, le.w, le.h, bg);
     c.fillRect(re.x, re.y, re.w, re.h, bg);
   }
-  drawEye(c, lSh, lx, /*rightFacing=*/true,  ink);   // left eye squints as ">"
-  drawEye(c, rSh, rx, /*rightFacing=*/false, ink);   // right eye as "<"
+  drawEye(c, g[0], lx, /*apexRight=*/true,  ink);   // left eye squints as ">"
+  drawEye(c, g[1], rx, /*apexRight=*/false, ink);   // right eye as "<"
   c.end();
 
   s_lPrev = lNew;
