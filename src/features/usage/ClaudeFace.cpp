@@ -216,6 +216,8 @@ static uint32_t s_lastDrawMs = 0;
 
 static Box s_lPrev = {0, 0, 0, 0};   // ink the left eye last occupied
 static Box s_rPrev = {0, 0, 0, 0};
+static EyeGeom s_lDrawn = {0, 0, 0};  // and the shape it was in, to diff against
+static EyeGeom s_rDrawn = {0, 0, 0};
 
 static inline uint32_t rnd() {
   s_rng ^= s_rng << 13;
@@ -386,6 +388,8 @@ void faceReset(uint32_t nowMs, uint32_t seed) {
 
   const Box empty = {0, 0, 0, 0};
   s_lPrev = s_rPrev = empty;
+  const EyeGeom none = {0, 0, 0};
+  s_lDrawn = s_rDrawn = none;
 }
 
 bool faceTick(uint32_t nowMs) {
@@ -464,6 +468,51 @@ static void drawEye(FaceCanvas& c, const EyeGeom& g, int16_t x,
   }
 }
 
+// The part of `a` that `b` does not cover, as up to four bands.
+static void rectSubtract(FaceCanvas& c, const Box& a, const Box& b, uint16_t col) {
+  if (a.w <= 0 || a.h <= 0) return;
+  if (b.w <= 0 || b.h <= 0) { c.fillRect(a.x, a.y, a.w, a.h, col); return; }
+
+  const int16_t ax0 = a.x, ay0 = a.y, ax1 = (int16_t)(a.x + a.w), ay1 = (int16_t)(a.y + a.h);
+  const int16_t bx0 = b.x, by0 = b.y, bx1 = (int16_t)(b.x + b.w), by1 = (int16_t)(b.y + b.h);
+  if (bx1 <= ax0 || bx0 >= ax1 || by1 <= ay0 || by0 >= ay1) {
+    c.fillRect(ax0, ay0, a.w, a.h, col);   // disjoint
+    return;
+  }
+  if (by0 > ay0) c.fillRect(ax0, ay0, a.w, (int16_t)(by0 - ay0), col);            // above
+  if (by1 < ay1) c.fillRect(ax0, by1, a.w, (int16_t)(ay1 - by1), col);            // below
+  const int16_t oy0 = hi16(ay0, by0), oy1 = lo16(ay1, by1);
+  if (oy1 > oy0) {
+    if (bx0 > ax0) c.fillRect(ax0, oy0, (int16_t)(bx0 - ax0), (int16_t)(oy1 - oy0), col);
+    if (bx1 < ax1) c.fillRect(bx1, oy0, (int16_t)(ax1 - bx1), (int16_t)(oy1 - oy0), col);
+  }
+}
+
+// Paint one eye as the difference between what is on the glass and what should
+// be, rather than clearing it and drawing it again.
+//
+// This is what the animation being "rough" actually was. The panel has no
+// framebuffer, so a clear is visible: for one frame the eye is background and
+// only then becomes ink again, and at 30 fps that shimmer on every eye every
+// frame is the roughness. Painting only the bands that genuinely change never
+// touches the part of the eye that stays ink, so there is nothing to shimmer —
+// and a blink, where the shape only shrinks, now costs two small erases and no
+// drawing at all.
+static void paintEye(FaceCanvas& c, const EyeGeom& oldG, const Box& oldB,
+                     const EyeGeom& newG, const Box& newB,
+                     int16_t x, bool apexRight, uint16_t bg, uint16_t ink) {
+  // A bent shape is not a rectangle, so the band difference does not describe
+  // it; those frames still clear and redraw. Only idle and done ever bend.
+  if (oldG.bend > 0 || newG.bend > 0 || oldB.w <= 0) {
+    const Box e = unite(oldB, newB);
+    c.fillRect(e.x, e.y, e.w, e.h, bg);
+    drawEye(c, newG, x, apexRight, ink);
+    return;
+  }
+  rectSubtract(c, oldB, newB, bg);    // what the eye vacated
+  rectSubtract(c, newB, oldB, ink);   // what it moved into
+}
+
 void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full) {
   EyeGeom g[2];
   int16_t ox;
@@ -475,17 +524,16 @@ void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full) {
   c.begin();
   if (full) {
     c.fillRect(0, 0, FACE_W, FACE_H, bg);
+    drawEye(c, g[0], lx, /*apexRight=*/true,  ink);   // left eye squints as ">"
+    drawEye(c, g[1], rx, /*apexRight=*/false, ink);   // right eye as "<"
   } else {
-    const Box le = unite(s_lPrev, lNew), re = unite(s_rPrev, rNew);
-    c.fillRect(le.x, le.y, le.w, le.h, bg);
-    c.fillRect(re.x, re.y, re.w, re.h, bg);
+    paintEye(c, s_lDrawn, s_lPrev, g[0], lNew, lx, /*apexRight=*/true,  bg, ink);
+    paintEye(c, s_rDrawn, s_rPrev, g[1], rNew, rx, /*apexRight=*/false, bg, ink);
   }
-  drawEye(c, g[0], lx, /*apexRight=*/true,  ink);   // left eye squints as ">"
-  drawEye(c, g[1], rx, /*apexRight=*/false, ink);   // right eye as "<"
   c.end();
 
-  s_lPrev = lNew;
-  s_rPrev = rNew;
+  s_lPrev = lNew;  s_lDrawn = g[0];
+  s_rPrev = rNew;  s_rDrawn = g[1];
 }
 
 // The stats screen's corner glyph: the same pair of eyes at roughly a third
