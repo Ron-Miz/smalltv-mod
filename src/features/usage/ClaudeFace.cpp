@@ -28,6 +28,16 @@
 #define SQUISH_H    10   // the flat bar the chevrons collapse to
 #define CHEV_THK    10   // chevron half-thickness, in stacked pixel columns
 
+// The chevron's diagonal is quantised into stairs this wide. Two reasons, one
+// cosmetic and one mechanical: the source art is pixel art, and columns that
+// share an offset can be emitted as one rectangle. A smooth one-pixel diagonal
+// costs one SPI address window per column -- 220 of them for a squint against
+// 2 for any flat pose -- and on a panel with no framebuffer that is watched
+// being painted on from left to right, which reads as a flicker.
+#ifndef CHEV_STEP
+#define CHEV_STEP    5
+#endif
+
 // Every pose is reached by a tween rather than a jump. A pose's hold from the
 // tables below is split into a morph and a rest: the morph is half the hold,
 // bounded so a 110 ms flutter still snaps and a 2 s rest does not spend two
@@ -361,6 +371,15 @@ static Box geomBox(const EyeGeom& g, int16_t x) {
 // One eye. A flat shape (bend 0) is a single rectangle, which is the common case
 // and stays one fill; a bent one is drawn column by column, the two bars
 // converging on the apex. `apexRight` puts the point of a > on the right.
+// Vertical offset of the arm at column `i`, quantised to a stair.
+static int16_t chevOff(const EyeGeom& g, bool apexRight, int16_t i) {
+  const int16_t span = (int16_t)(g.w - 1);
+  if (span <= 0) return 0;
+  int16_t n = apexRight ? (int16_t)(span - i) : i;
+  n = (int16_t)((n / CHEV_STEP) * CHEV_STEP);
+  return (int16_t)(((int32_t)g.bend * n) / span);
+}
+
 static void drawEye(FaceCanvas& c, const EyeGeom& g, int16_t x,
                     bool apexRight, uint16_t ink) {
   if (g.w <= 0 || g.h <= 0) return;
@@ -372,13 +391,15 @@ static void drawEye(FaceCanvas& c, const EyeGeom& g, int16_t x,
     return;
   }
 
-  const int16_t x0   = (int16_t)(cx - g.w / 2);
-  const int16_t span = (int16_t)(g.w - 1);
-  for (int16_t i = 0; i < g.w; i++) {
-    const int16_t n   = apexRight ? (int16_t)(span - i) : i;
-    const int16_t off = span > 0 ? (int16_t)(((int32_t)g.bend * n) / span) : 0;
-    c.fillRect((int16_t)(x0 + i), (int16_t)(cy - off - g.h / 2), 1, g.h, ink);
-    if (off) c.fillRect((int16_t)(x0 + i), (int16_t)(cy + off - g.h / 2), 1, g.h, ink);
+  const int16_t x0 = (int16_t)(cx - g.w / 2);
+  for (int16_t i = 0; i < g.w; ) {
+    const int16_t off = chevOff(g, apexRight, i);
+    int16_t j = (int16_t)(i + 1);
+    while (j < g.w && chevOff(g, apexRight, j) == off) j++;
+    const int16_t w = (int16_t)(j - i);
+    c.fillRect((int16_t)(x0 + i), (int16_t)(cy - off - g.h / 2), w, g.h, ink);
+    if (off) c.fillRect((int16_t)(x0 + i), (int16_t)(cy + off - g.h / 2), w, g.h, ink);
+    i = j;
   }
 }
 
@@ -421,24 +442,22 @@ static bool columnOff(const EyeGeom& g, int16_t cx, bool apexRight, int16_t x, i
   if (g.w <= 0 || g.h <= 0) return false;
   const int16_t i = (int16_t)(x - (cx - g.w / 2));
   if (i < 0 || i >= g.w) return false;
-  const int16_t span = (int16_t)(g.w - 1);
-  const int16_t n    = apexRight ? (int16_t)(span - i) : i;
-  *off = span > 0 ? (int16_t)(((int32_t)g.bend * n) / span) : 0;
+  *off = chevOff(g, apexRight, i);
   return true;
 }
 
 // Paint `a` minus the (ordered, disjoint) spans `b`, one pixel wide at x.
-static void spanSubtract(FaceCanvas& c, int16_t x, Span a,
+static void spanSubtract(FaceCanvas& c, int16_t x, int16_t w, Span a,
                          const Span* b, uint8_t nb, uint16_t col) {
   int16_t cur = a.y0;
   for (uint8_t i = 0; i < nb; i++) {
     if (b[i].y1 <= cur) continue;
     if (b[i].y0 >= a.y1) break;
-    if (b[i].y0 > cur) c.fillRect(x, cur, 1, (int16_t)(b[i].y0 - cur), col);
+    if (b[i].y0 > cur) c.fillRect(x, cur, w, (int16_t)(b[i].y0 - cur), col);
     if (b[i].y1 > cur) cur = b[i].y1;
     if (cur >= a.y1) return;
   }
-  if (cur < a.y1) c.fillRect(x, cur, 1, (int16_t)(a.y1 - cur), col);
+  if (cur < a.y1) c.fillRect(x, cur, w, (int16_t)(a.y1 - cur), col);
 }
 
 // The bent-shape counterpart of rectSubtract: walk every column the two shapes
@@ -448,6 +467,13 @@ static void spanSubtract(FaceCanvas& c, int16_t x, Span a,
 // the flicker the difference painting exists to remove, and with the session
 // states gone the squint and the wink are back in the ordinary rotation where
 // it is seen constantly.
+static bool sameSpans(const Span* a, uint8_t na, const Span* b, uint8_t nb) {
+  if (na != nb) return false;
+  for (uint8_t i = 0; i < na; i++)
+    if (a[i].y0 != b[i].y0 || a[i].y1 != b[i].y1) return false;
+  return true;
+}
+
 static void paintBent(FaceCanvas& c, const EyeGeom& oldG, const EyeGeom& newG,
                       int16_t cx, bool apexRight, uint16_t bg, uint16_t ink) {
   const int16_t cy = eyeCY();
@@ -458,15 +484,33 @@ static void paintBent(FaceCanvas& c, const EyeGeom& oldG, const EyeGeom& newG,
     x1 = hi16(x1, (int16_t)(ox0 + oldG.w));
   }
 
-  for (int16_t x = x0; x < x1; x++) {
-    Span os[2], ns[2];
-    int16_t off;
-    const uint8_t no = columnOff(oldG, cx, apexRight, x, &off)
-                     ? columnSpans(cy, off, oldG.h, os) : 0;
-    const uint8_t nn = columnOff(newG, cx, apexRight, x, &off)
-                     ? columnSpans(cy, off, newG.h, ns) : 0;
-    for (uint8_t i = 0; i < no; i++) spanSubtract(c, x, os[i], ns, nn, bg);
-    for (uint8_t i = 0; i < nn; i++) spanSubtract(c, x, ns[i], os, no, ink);
+  // Columns of a stair share their spans, so a run of them is one rectangle.
+  // x1 itself is walked, with no spans, purely to flush the final run.
+  Span pOld[2] = {}, pNew[2] = {};
+  uint8_t pNo = 0, pNn = 0;
+  int16_t runX = x0;
+  bool inRun = false;
+
+  for (int16_t x = x0; x <= x1; x++) {
+    Span os[2] = {}, ns[2] = {};
+    uint8_t no = 0, nn = 0;
+    if (x < x1) {
+      int16_t off;
+      no = columnOff(oldG, cx, apexRight, x, &off) ? columnSpans(cy, off, oldG.h, os) : 0;
+      nn = columnOff(newG, cx, apexRight, x, &off) ? columnSpans(cy, off, newG.h, ns) : 0;
+      if (inRun && sameSpans(os, no, pOld, pNo) && sameSpans(ns, nn, pNew, pNn)) continue;
+    }
+    if (inRun) {
+      const int16_t w = (int16_t)(x - runX);
+      for (uint8_t i = 0; i < pNo; i++) spanSubtract(c, runX, w, pOld[i], pNew, pNn, bg);
+      for (uint8_t i = 0; i < pNn; i++) spanSubtract(c, runX, w, pNew[i], pOld, pNo, ink);
+    }
+    if (x < x1) {
+      pOld[0] = os[0]; pOld[1] = os[1]; pNo = no;
+      pNew[0] = ns[0]; pNew[1] = ns[1]; pNn = nn;
+      runX = x;
+      inRun = true;
+    }
   }
 }
 
