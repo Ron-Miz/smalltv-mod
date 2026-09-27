@@ -357,16 +357,6 @@ static Box geomBox(const EyeGeom& g, int16_t x) {
   return b;
 }
 
-static Box unite(const Box& a, const Box& b) {
-  if (a.w == 0 || a.h == 0) return b;
-  if (b.w == 0 || b.h == 0) return a;
-  Box u;
-  u.x = lo16(a.x, b.x);
-  u.y = lo16(a.y, b.y);
-  u.w = (int16_t)(hi16((int16_t)(a.x + a.w), (int16_t)(b.x + b.w)) - u.x);
-  u.h = (int16_t)(hi16((int16_t)(a.y + a.h), (int16_t)(b.y + b.h)) - u.y);
-  return u;
-}
 
 // One eye. A flat shape (bend 0) is a single rectangle, which is the common case
 // and stays one fill; a bent one is drawn column by column, the two bars
@@ -412,6 +402,74 @@ static void rectSubtract(FaceCanvas& c, const Box& a, const Box& b, uint16_t col
   }
 }
 
+// A column of ink, as up to two runs: the upper and lower bars. They merge into
+// one run wherever the bend is small enough that they touch.
+struct Span { int16_t y0, y1; };   // [y0, y1)
+
+static uint8_t columnSpans(int16_t cy, int16_t off, int16_t h, Span out[2]) {
+  if (h <= 0) return 0;
+  const int16_t aTop = (int16_t)(cy - off - h / 2), aBot = (int16_t)(aTop + h);
+  const int16_t bTop = (int16_t)(cy + off - h / 2), bBot = (int16_t)(bTop + h);
+  if (aBot >= bTop) { out[0].y0 = aTop; out[0].y1 = bBot; return 1; }   // merged
+  out[0].y0 = aTop; out[0].y1 = aBot;
+  out[1].y0 = bTop; out[1].y1 = bBot;
+  return 2;
+}
+
+// Where column `x` sits on this shape, if it sits on it at all.
+static bool columnOff(const EyeGeom& g, int16_t cx, bool apexRight, int16_t x, int16_t* off) {
+  if (g.w <= 0 || g.h <= 0) return false;
+  const int16_t i = (int16_t)(x - (cx - g.w / 2));
+  if (i < 0 || i >= g.w) return false;
+  const int16_t span = (int16_t)(g.w - 1);
+  const int16_t n    = apexRight ? (int16_t)(span - i) : i;
+  *off = span > 0 ? (int16_t)(((int32_t)g.bend * n) / span) : 0;
+  return true;
+}
+
+// Paint `a` minus the (ordered, disjoint) spans `b`, one pixel wide at x.
+static void spanSubtract(FaceCanvas& c, int16_t x, Span a,
+                         const Span* b, uint8_t nb, uint16_t col) {
+  int16_t cur = a.y0;
+  for (uint8_t i = 0; i < nb; i++) {
+    if (b[i].y1 <= cur) continue;
+    if (b[i].y0 >= a.y1) break;
+    if (b[i].y0 > cur) c.fillRect(x, cur, 1, (int16_t)(b[i].y0 - cur), col);
+    if (b[i].y1 > cur) cur = b[i].y1;
+    if (cur >= a.y1) return;
+  }
+  if (cur < a.y1) c.fillRect(x, cur, 1, (int16_t)(a.y1 - cur), col);
+}
+
+// The bent-shape counterpart of rectSubtract: walk every column the two shapes
+// between them cover, and paint only the runs that differ. A > or < is not a
+// rectangle, so the band difference cannot describe it — without this, those
+// frames fell back to clearing the whole eye and redrawing it, which is exactly
+// the flicker the difference painting exists to remove, and with the session
+// states gone the squint and the wink are back in the ordinary rotation where
+// it is seen constantly.
+static void paintBent(FaceCanvas& c, const EyeGeom& oldG, const EyeGeom& newG,
+                      int16_t cx, bool apexRight, uint16_t bg, uint16_t ink) {
+  const int16_t cy = eyeCY();
+  int16_t x0 = (int16_t)(cx - newG.w / 2), x1 = (int16_t)(x0 + newG.w);
+  if (oldG.w > 0) {
+    const int16_t ox0 = (int16_t)(cx - oldG.w / 2);
+    x0 = lo16(x0, ox0);
+    x1 = hi16(x1, (int16_t)(ox0 + oldG.w));
+  }
+
+  for (int16_t x = x0; x < x1; x++) {
+    Span os[2], ns[2];
+    int16_t off;
+    const uint8_t no = columnOff(oldG, cx, apexRight, x, &off)
+                     ? columnSpans(cy, off, oldG.h, os) : 0;
+    const uint8_t nn = columnOff(newG, cx, apexRight, x, &off)
+                     ? columnSpans(cy, off, newG.h, ns) : 0;
+    for (uint8_t i = 0; i < no; i++) spanSubtract(c, x, os[i], ns, nn, bg);
+    for (uint8_t i = 0; i < nn; i++) spanSubtract(c, x, ns[i], os, no, ink);
+  }
+}
+
 // Paint one eye as the difference between what is on the glass and what should
 // be, rather than clearing it and drawing it again.
 //
@@ -425,14 +483,12 @@ static void rectSubtract(FaceCanvas& c, const Box& a, const Box& b, uint16_t col
 static void paintEye(FaceCanvas& c, const EyeGeom& oldG, const Box& oldB,
                      const EyeGeom& newG, const Box& newB,
                      int16_t x, bool apexRight, uint16_t bg, uint16_t ink) {
-  // A bent shape is not a rectangle, so the band difference does not describe
-  // it; those frames still clear and redraw. Only idle and done ever bend.
-  if (oldG.bend > 0 || newG.bend > 0 || oldB.w <= 0) {
-    const Box e = unite(oldB, newB);
-    c.fillRect(e.x, e.y, e.w, e.h, bg);
-    drawEye(c, newG, x, apexRight, ink);
+  if (oldG.bend > 0 || newG.bend > 0) {
+    paintBent(c, oldG, newG, (int16_t)(x + EYE_W / 2), apexRight, bg, ink);
     return;
   }
+  // Both flat: the whole eye is one rectangle, so four bands describe the
+  // change and the per-column walk is not worth its cost.
   rectSubtract(c, oldB, newB, bg);    // what the eye vacated
   rectSubtract(c, newB, oldB, ink);   // what it moved into
 }

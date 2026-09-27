@@ -122,6 +122,19 @@ static void handleStatus() {
   o["contstk"] = platformFreeContStack();   // primary stack headroom (ESP8266)
   o["uptime"] = millis() / 1000;
   o["reset"] = appResetReason();
+#if WITH_USAGE
+  // How long since usage data last arrived, so "why are there no bars" has an
+  // answer from the API instead of from watching the screen. -1 = never yet.
+  // The daemon either polls in (pull) or posts here (push); either way this is
+  // the age of the last good reading, and the screen falls back to the idle
+  // face once it passes roughly two poll intervals.
+  {
+    const UsageData& ud = usageGet();
+    JsonObject uo = o["usage"].to<JsonObject>();
+    uo["valid"]  = ud.valid;
+    uo["ageSec"] = ud.lastOkMs ? (int32_t)((millis() - ud.lastOkMs) / 1000) : -1;
+  }
+#endif
   o["synced"] = clockSynced();
   { String ts = clockTimeStr(); if (ts.length()) o["time"] = ts; }
   o["tz"]        = S->clock.tz;
