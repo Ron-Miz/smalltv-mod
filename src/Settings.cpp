@@ -159,6 +159,8 @@ static String minToHhmm(uint16_t v) {
 void ClockSettings::setDefaults() {
   tz            = DEFAULT_TZ_NAME;
   tzPosix       = DEFAULT_TZ_POSIX;
+  ntp1          = NTP_SERVER1;
+  ntp2          = NTP_SERVER2;
   nightEnabled  = DEFAULT_NIGHT_ENABLED;
   nightStartMin = DEFAULT_NIGHT_START_MIN;
   nightEndMin   = DEFAULT_NIGHT_END_MIN;
@@ -168,6 +170,8 @@ void ClockSettings::setDefaults() {
 void ClockSettings::toJson(JsonObject o) const {
   o["tz"]           = tz;
   o["tzPosix"]      = tzPosix;
+  o["ntp1"]         = ntp1;
+  o["ntp2"]         = ntp2;
   o["nightEnabled"] = nightEnabled;
   o["nightStart"]   = minToHhmm(nightStartMin);
   o["nightEnd"]     = minToHhmm(nightEndMin);
@@ -177,6 +181,10 @@ void ClockSettings::toJson(JsonObject o) const {
 void ClockSettings::fromJson(JsonObjectConst o) {
   if (o["tz"].is<const char*>())          tz = o["tz"].as<String>();
   if (o["tzPosix"].is<const char*>())     tzPosix = o["tzPosix"].as<String>();
+  // Trimmed, and capped at the field width, so a stray space or a pasted line
+  // cannot produce a hostname the resolver will never answer for.
+  if (o["ntp1"].is<const char*>())        { ntp1 = o["ntp1"].as<String>(); ntp1.trim(); ntp1.remove(MAX_NTP_HOST_LEN); }
+  if (o["ntp2"].is<const char*>())        { ntp2 = o["ntp2"].as<String>(); ntp2.trim(); ntp2.remove(MAX_NTP_HOST_LEN); }
   if (o["nightEnabled"].is<bool>())       nightEnabled = o["nightEnabled"];
   if (o["nightStart"].is<const char*>())  nightStartMin = hhmmToMin(o["nightStart"], nightStartMin);
   if (o["nightEnd"].is<const char*>())    nightEndMin   = hhmmToMin(o["nightEnd"], nightEndMin);

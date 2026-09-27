@@ -76,6 +76,7 @@ struct UsageSettings {
 struct ClockSettings {
   String   tz;            // IANA display name, e.g. "Europe/Rome" (UI round-trip)
   String   tzPosix;       // POSIX TZ rule the device feeds SNTP
+  String   ntp1, ntp2;    // time servers; empty falls back to NTP_SERVER1/2
   bool     nightEnabled;  // dim/blank on a nightly schedule
   uint16_t nightStartMin; // minutes since local midnight (0..1439)
   uint16_t nightEndMin;

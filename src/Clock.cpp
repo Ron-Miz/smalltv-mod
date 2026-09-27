@@ -4,6 +4,7 @@
 #include "WgClient.h"
 
 static String            s_armedTz;          // last tzPosix armed (clockReapply re-arms only on change)
+static String            s_armedNtp;         // last server pair armed, as "ntp1|ntp2"
 static bool              s_ntpStarted = false; // SNTP has been started for a clock consumer
 static volatile uint32_t s_lastSyncMs = 0;   // millis() of the last successful SNTP sync
 static volatile bool     s_haveSync   = false;
@@ -31,11 +32,36 @@ static bool nightWindowContains(int now, int start, int end) {
   return now >= start || now < end;
 }
 
+// SNTP keeps the POINTER it is handed, not a copy — lwIP's sntp_setservername
+// stores the address and the resolver reads it on every query. A String's
+// buffer moves when the String is reassigned, so handing over
+// settings.clock.ntp1.c_str() would leave SNTP dereferencing freed memory the
+// moment a settings save touched the field. These buffers never move.
+static char s_ntp1[MAX_NTP_HOST_LEN + 1];
+static char s_ntp2[MAX_NTP_HOST_LEN + 1];
+
+// Copy the configured server in, falling back to the compiled-in default when
+// the field is blank, so clearing the box in the web UI returns to the public
+// pool rather than arming SNTP with a hostname it can never resolve.
+static void armHost(char* dst, const String& v, const char* fallback) {
+  const char* src = v.length() ? v.c_str() : fallback;
+  strlcpy(dst, src, MAX_NTP_HOST_LEN + 1);
+}
+
+// Identity of the armed pair, so clockReapply can tell a real change from a save
+// that merely re-sent the same values.
+static String ntpFingerprint(const Settings& s) {
+  return s.clock.ntp1 + "|" + s.clock.ntp2;
+}
+
 void clockBegin(const Settings& s) {
   platformOnTimeSync(onNtpSync);            // register before the first sync can land
   const char* tz = s.clock.tzPosix.length() ? s.clock.tzPosix.c_str() : "UTC0";
-  platformTimeBegin(tz, NTP_SERVER1, NTP_SERVER2);
-  s_armedTz = s.clock.tzPosix;
+  armHost(s_ntp1, s.clock.ntp1, NTP_SERVER1);
+  armHost(s_ntp2, s.clock.ntp2, NTP_SERVER2);
+  platformTimeBegin(tz, s_ntp1, s_ntp2);
+  s_armedTz  = s.clock.tzPosix;
+  s_armedNtp = ntpFingerprint(s);
   s_ntpStarted = true;
 }
 
@@ -53,7 +79,9 @@ void clockReapply(const Settings& s) {
 
 void clockForceResync(const Settings& s) {
   const char* tz = s.clock.tzPosix.length() ? s.clock.tzPosix.c_str() : "UTC0";
-  platformTimeBegin(tz, NTP_SERVER1, NTP_SERVER2);   // re-arm SNTP -> fresh query
+  armHost(s_ntp1, s.clock.ntp1, NTP_SERVER1);
+  armHost(s_ntp2, s.clock.ntp2, NTP_SERVER2);
+  platformTimeBegin(tz, s_ntp1, s_ntp2);   // re-arm -> fresh query
 }
 
 bool clockSynced() { return platformTimeValid(); }

@@ -376,8 +376,13 @@
 #define MAX_COLOR_GAIN       150
 
 // --- Clock / night mode (device-wide) ---
+// Default NTP servers. These are only the defaults now: the pair is editable in
+// the web UI, because a device on a network with no route to the public pool
+// (an IoT VLAN with filtered egress, or one with a local time source) otherwise
+// has no way to get a clock at all, and without a clock there is no night mode.
 #define NTP_SERVER1             "pool.ntp.org"
 #define NTP_SERVER2             "time.nist.gov"
+#define MAX_NTP_HOST_LEN        48   // hostname or IP of one time server
 #define DEFAULT_TZ_NAME         ""        // IANA display name; empty = UTC
 #define DEFAULT_TZ_POSIX        "UTC0"    // POSIX TZ rule the device feeds SNTP
 #define DEFAULT_NIGHT_ENABLED   false
