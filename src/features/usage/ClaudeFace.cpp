@@ -166,18 +166,28 @@ struct FaceMood {
   uint8_t     weight[8];      // one per routine, in kRoutines order
   uint16_t    restMin, restMax;
   uint32_t    ttlMs;          // 0 = never lapses (idle only)
+  uint8_t     takesScreen;    // may displace the usage numbers
 };
 
 // Weights are relative, not percentages — a zero simply bars a routine from a
 // mood, which is how "working" never squints and "error" almost only goes flat.
-//                        wig squ win hlf slo gla flu flat
+//
+// takesScreen is deliberately set for two states only. The usage numbers are
+// what this screen is for, and a state that merely narrates what Claude is
+// doing must not cost you the thing you put on the shelf to look at: with a
+// hook on every tool call, "working" alone would hold the panel for its whole
+// timeout and the bars would never be seen. Only the two states that are asking
+// for something — you are needed, or something broke — are worth the
+// interruption. The rest still shape the idle animation and still tint the
+// header badge, they just wait their turn.
+//                        wig squ win hlf slo gla flu flat                     screen
 static const FaceMood kMoods[FACE_MOOD_COUNT] = {
-  {"idle",     { 3,  2,  2,  2,  3,  3,  2,  0},  900, 3200,      0},
-  {"thinking", { 5,  0,  1,  1,  1,  6,  2,  0},  300,  900,  90000UL},
-  {"working",  { 1,  0,  0,  1,  5,  1,  0,  1}, 2000, 5000, 300000UL},
-  {"waiting",  { 4,  0,  2,  2,  0,  2,  6,  0},  200,  600, 600000UL},
-  {"done",     { 1,  6,  4,  1,  1,  0,  1,  0},  700, 1800,  60000UL},
-  {"error",    { 0,  0,  0,  1,  2,  0,  0, 12}, 1500, 3500, 180000UL},
+  {"idle",     { 3,  2,  2,  2,  3,  3,  2,  0},  900, 3200,      0,  0},
+  {"thinking", { 5,  0,  1,  1,  1,  6,  2,  0},  300,  900,  90000UL, 0},
+  {"working",  { 1,  0,  0,  1,  5,  1,  0,  1}, 2000, 5000, 300000UL, 0},
+  {"waiting",  { 4,  0,  2,  2,  0,  2,  6,  0},  200,  600, 600000UL, 1},
+  {"done",     { 1,  6,  4,  1,  1,  0,  1,  0},  700, 1800,  60000UL, 0},
+  {"error",    { 0,  0,  0,  1,  2,  0,  0, 12}, 1500, 3500, 180000UL, 1},
 };
 
 // ---------------------------------------------------------------------------
@@ -257,6 +267,7 @@ uint16_t faceHoldMs() { return s_resting ? s_restHold : curPose().hold; }
 const char* faceRoutineName() { return s_resting ? "rest" : kRoutines[s_routine].name; }
 
 uint8_t     faceMood()     { return s_mood; }
+bool        faceMoodTakesScreen() { return kMoods[s_mood].takesScreen != 0; }
 const char* faceMoodName() { return kMoods[s_mood].name; }
 const char* faceMoodNameAt(uint8_t mood) {
   return mood < FACE_MOOD_COUNT ? kMoods[mood].name : "";

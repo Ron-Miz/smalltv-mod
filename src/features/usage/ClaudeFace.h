@@ -68,6 +68,11 @@ void        faceSetMood(uint8_t mood, uint32_t nowMs, uint32_t ttlMs);
 uint8_t     faceMood();
 const char* faceMoodName();
 
+// True only for the states that are asking for something — waiting on you, or
+// an error. Those displace the usage numbers; every other state leaves the bars
+// alone and shows itself on the header badge instead.
+bool        faceMoodTakesScreen();
+
 // Start the animation. `seed` picks the sequence of routines: pass something
 // that differs run to run on the device, or a constant in a harness to replay
 // the same sequence. `nowMs` is millis() on the device, simulated time in the
