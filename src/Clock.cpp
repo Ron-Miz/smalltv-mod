@@ -74,7 +74,8 @@ void clockReapply(const Settings& s) {
   // WireGuard tunnel and theme clocks also need it. The peer rejects a handshake stamped
   // with a wrong clock (and that build is an ESP32, where the heap cost is moot).
   if (!s.clock.nightEnabled && !wgNeedsClock(s) && !(WITH_THEME && s.mode == MODE_THEME)) return;
-  if (!s_ntpStarted || s.clock.tzPosix != s_armedTz) clockBegin(s);
+  if (!s_ntpStarted || s.clock.tzPosix != s_armedTz ||
+      ntpFingerprint(s) != s_armedNtp) clockBegin(s);
 }
 
 void clockForceResync(const Settings& s) {

@@ -236,7 +236,7 @@ static void handlePostConfig() {
   }
 
   // Live apply (no reboot needed for these)
-  clockReapply(*S);         // re-arm SNTP iff the timezone changed
+  clockReapply(*S);         // re-arm SNTP iff the timezone or a server changed
   appApplyBrightness();     // apply effective brightness (respects night/auto/manual)
   gfxApplyColors(*S);       // rotation, panel colour order/inversion, channel gain
   appInvalidate();          // re-init every mode + repaint (covers mode/URL/symbol changes)
