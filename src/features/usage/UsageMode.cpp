@@ -99,22 +99,6 @@ static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
 // dot instead of a full-screen clear.
 static bool s_flagShown = false;
 
-// The header badge doubles as the session-state light on the stats screen: the
-// states that do not take the panel still show here, so the cube reads as busy
-// or waiting at a glance without the numbers going away.
-static uint8_t s_badgeMood = 0xFF;   // 0xFF = not drawn yet
-
-static uint16_t badgeColor(uint8_t mood) {
-  switch (mood) {
-    case FACE_MOOD_WAITING:  return C_ACCENT;
-    case FACE_MOOD_ERROR:    return C_RED;
-    case FACE_MOOD_DONE:     return C_UGREEN;
-    case FACE_MOOD_THINKING:
-    case FACE_MOOD_WORKING:  return C_WHITE;
-    default:                 return C_DIM;
-  }
-}
-
 // `fullRepaint` clears the static layout only on a real transition — cards and
 // the flag dot always repaint their own area, so routine updates skip it.
 static void drawUsage(const UsageData& u, bool fullRepaint) {
@@ -125,21 +109,14 @@ static void drawUsage(const UsageData& u, bool fullRepaint) {
     s_facePrimed = false;   // force a full redraw next time the idle face shows
     gfx->fillScreen(C_BLACK);
 
+    // Header: the same pair of eyes at badge scale + title.
+    GfxFaceCanvas fc(gfx);
+    faceBadge(fc, 6, 4, C_ACCENT);
     gfx->setTextSize(3);
     gfx->setTextColor(C_WHITE);
     gfx->setCursor(56, 12);
     gfx->print("CLAUDE");
     s_flagShown = false;
-    s_badgeMood = 0xFF;      // force the badge below to draw on a fresh layout
-  }
-
-  // Header badge: redrawn only when the state changes, so a routine data update
-  // costs nothing. Its own 40x40 box is cleared first — nothing else draws there.
-  if (s_badgeMood != faceMood()) {
-    s_badgeMood = faceMood();
-    gfx->fillRect(6, 4, 40, 40, C_BLACK);
-    GfxFaceCanvas fc(gfx);
-    faceBadge(fc, 6, 4, badgeColor(s_badgeMood));
   }
 
   if (!u.valid) {
@@ -233,18 +210,9 @@ void UsageMode::service(const Settings& s) {
   // Considered stale after ~2 missed polls (plus a grace) — then show the face.
   uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 2UL + USAGE_STALE_GRACE_MS;
 
-  // Only a state that is asking for something takes the panel from the numbers
-  // (see kMoods[].takesScreen). The bars are what this screen is for; a state
-  // that merely narrates what Claude is doing shows up on the header badge
-  // instead, so using Claude Code does not cost you the reading you came for.
-  const bool moodHasScreen = faceMoodTakesScreen();
-
-  if (usageFresh(staleMs) && !moodHasScreen) {
+  if (usageFresh(staleMs)) {
     bool fullRepaint = !layoutPrimed_;
     if (showingFace_) { showingFace_ = false; needRender_ = true; fullRepaint = true; }
-    // The badge is the only thing on this screen that changes without the data
-    // changing, so the state has to be able to ask for a repaint by itself.
-    if (s_badgeMood != faceMood()) needRender_ = true;
     if (u.lastOkMs != usageRenderedOk_) {
       usageRenderedOk_ = u.lastOkMs;
       if (contentChanged(u)) {

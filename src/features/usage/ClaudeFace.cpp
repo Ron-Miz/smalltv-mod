@@ -28,10 +28,6 @@
 #define SQUISH_H    10   // the flat bar the chevrons collapse to
 #define CHEV_THK    10   // chevron half-thickness, in stacked pixel columns
 
-// Mood change cut: long enough not to look like a glitch, short enough that a
-// hook firing feels immediate rather than queued behind whatever was playing.
-#define MOOD_CUT_MS  150
-
 // Every pose is reached by a tween rather than a jump. A pose's hold from the
 // tables below is split into a morph and a rest: the morph is half the hold,
 // bounded so a 110 ms flutter still snaps and a 2 s rest does not spend two
@@ -103,11 +99,6 @@ static const FacePose kFlutter[] = {         // two quick blinks
   {SH_SHUT, SH_SHUT, 0, 110}, {SH_OPEN, SH_OPEN, 0, 200},
 };
 
-static const FacePose kFlat[] = {              // gone flat: the error look
-  {SH_BAR,  SH_BAR,  0, 1400}, {SH_SHUT, SH_SHUT, 0, 260},
-  {SH_BAR,  SH_BAR,  0, 1800},
-};
-
 struct FaceRoutine {
   const char*     name;
   const FacePose* poses;
@@ -124,7 +115,6 @@ static const FaceRoutine kRoutines[] = {
   ROUTINE("slow blink", kSlowBlink, 0),
   ROUTINE("glance",     kGlance,    1),
   ROUTINE("flutter",    kFlutter,   0),
-  ROUTINE("flat",       kFlat,      0),
 };
 static const uint8_t kRoutineCount = sizeof(kRoutines) / sizeof(kRoutines[0]);
 
@@ -156,39 +146,14 @@ static const EyeGeom kShapes[4] = {
   {EYE_W,          SQUISH_H,         0},           // SH_BAR
 };
 
-// ---------------------------------------------------------------------------
-// Moods. A mood is a weight per routine plus the rest window between them. The
-// rests carry as much of the reading as the routines do: the same blink at a
-// 400 ms gap is restless and at a 4 s gap is calm.
-// ---------------------------------------------------------------------------
-struct FaceMood {
-  const char* name;
-  uint8_t     weight[8];      // one per routine, in kRoutines order
-  uint16_t    restMin, restMax;
-  uint32_t    ttlMs;          // 0 = never lapses (idle only)
-  uint8_t     takesScreen;    // may displace the usage numbers
-};
-
-// Weights are relative, not percentages — a zero simply bars a routine from a
-// mood, which is how "working" never squints and "error" almost only goes flat.
-//
-// takesScreen is deliberately set for two states only. The usage numbers are
-// what this screen is for, and a state that merely narrates what Claude is
-// doing must not cost you the thing you put on the shelf to look at: with a
-// hook on every tool call, "working" alone would hold the panel for its whole
-// timeout and the bars would never be seen. Only the two states that are asking
-// for something — you are needed, or something broke — are worth the
-// interruption. The rest still shape the idle animation and still tint the
-// header badge, they just wait their turn.
-//                        wig squ win hlf slo gla flu flat                     screen
-static const FaceMood kMoods[FACE_MOOD_COUNT] = {
-  {"idle",     { 3,  2,  2,  2,  3,  3,  2,  0},  900, 3200,      0,  0},
-  {"thinking", { 5,  0,  1,  1,  1,  6,  2,  0},  300,  900,  90000UL, 0},
-  {"working",  { 1,  0,  0,  1,  5,  1,  0,  1}, 2000, 5000, 300000UL, 0},
-  {"waiting",  { 4,  0,  2,  2,  0,  2,  6,  0},  200,  600, 600000UL, 1},
-  {"done",     { 1,  6,  4,  1,  1,  0,  1,  0},  700, 1800,  60000UL, 0},
-  {"error",    { 0,  0,  0,  1,  2,  0,  0, 12}, 1500, 3500, 180000UL, 1},
-};
+// How often each routine is picked, relative to the others, and the window the
+// rest between them is drawn from. Both are fixed: the face is an idle
+// animation, not a status light, and the spread in the rest is what keeps it
+// from settling into a rhythm.
+//                                 wig squ win hlf slo gla flu
+static const uint8_t kWeights[7] = { 3,  2,  2,  2,  3,  3,  2};
+#define REST_MIN_MS  900
+#define REST_MAX_MS 3200
 
 // ---------------------------------------------------------------------------
 // State. xorshift32 rather than the Arduino RNG, so the host harness replays a
@@ -200,9 +165,6 @@ static uint8_t  s_pose     = 0;
 static uint8_t  s_mirror   = 0;
 static bool     s_resting  = true;
 static uint16_t s_restHold = 0;
-static uint8_t  s_mood     = FACE_MOOD_IDLE;
-static uint32_t s_moodMs   = 0;      // when the mood was last pushed
-static uint32_t s_moodTtl  = 0;      // 0 = never lapses
 
 // Tween: the eyes travel from s_from to s_to over s_morphMs, then hold still
 // for s_holdMs. s_progress is the raw 0..255 position, eased at render time.
@@ -255,7 +217,7 @@ static uint8_t weightedPick(const uint8_t* w, int16_t exclude) {
 }
 
 static void pickRoutine() {
-  s_routine = weightedPick(kMoods[s_mood].weight, (int16_t)s_routine);
+  s_routine = weightedPick(kWeights, (int16_t)s_routine);
   s_mirror  = kRoutines[s_routine].mirrors ? (uint8_t)(rnd() & 1) : 0;
   s_pose    = 0;
 }
@@ -267,20 +229,6 @@ static inline const FacePose& curPose() {
 uint16_t faceHoldMs() { return s_resting ? s_restHold : curPose().hold; }
 
 const char* faceRoutineName() { return s_resting ? "rest" : kRoutines[s_routine].name; }
-
-uint8_t     faceMood()     { return s_mood; }
-bool        faceMoodTakesScreen() { return kMoods[s_mood].takesScreen != 0; }
-const char* faceMoodName() { return kMoods[s_mood].name; }
-const char* faceMoodNameAt(uint8_t mood) {
-  return mood < FACE_MOOD_COUNT ? kMoods[mood].name : "";
-}
-
-int faceMoodFind(const char* name) {
-  if (!name || !*name) return -1;
-  for (uint8_t i = 0; i < FACE_MOOD_COUNT; i++)
-    if (!strcasecmp(name, kMoods[i].name)) return (int)i;
-  return -1;
-}
 
 // ---------------------------------------------------------------------------
 // Tweening
@@ -348,24 +296,9 @@ static void stepPose(uint32_t now) {
     s_pose++;
   } else {
     s_resting  = true;
-    s_restHold = rndRange(kMoods[s_mood].restMin, kMoods[s_mood].restMax);
+    s_restHold = rndRange(REST_MIN_MS, REST_MAX_MS);
   }
   armTween(now);
-}
-
-void faceSetMood(uint8_t mood, uint32_t nowMs, uint32_t ttlMs) {
-  if (mood >= FACE_MOOD_COUNT) return;
-  const bool changed = (mood != s_mood);
-  s_mood    = mood;
-  s_moodMs  = nowMs;
-  s_moodTtl = ttlMs ? ttlMs : kMoods[mood].ttlMs;
-  if (changed) {
-    // Cut to a brief rest so the new mood's routines start almost at once,
-    // rather than after however long the one mid-play still had to run.
-    s_resting  = true;
-    s_restHold = MOOD_CUT_MS;
-    armTween(nowMs);
-  }
 }
 
 void faceReset(uint32_t nowMs, uint32_t seed) {
@@ -375,8 +308,6 @@ void faceReset(uint32_t nowMs, uint32_t seed) {
   s_mirror   = 0;
   s_resting  = true;                             // open on a calm face
   s_restHold = 800;
-  // The mood is deliberately NOT cleared: it is pushed from outside and
-  // outlives the screen being entered and left.
 
   s_from[0] = s_from[1] = s_to[0] = s_to[1] = kShapes[SH_OPEN];
   s_fromOx = s_toOx = 0;
@@ -393,13 +324,6 @@ void faceReset(uint32_t nowMs, uint32_t seed) {
 }
 
 bool faceTick(uint32_t nowMs) {
-  // A mood that stopped being refreshed lapses back to idle. The routine
-  // mid-play is left to finish; the next pick reads the idle weights.
-  if (s_moodTtl && (nowMs - s_moodMs) >= s_moodTtl) {
-    s_mood    = FACE_MOOD_IDLE;
-    s_moodTtl = 0;
-  }
-
   const uint32_t el = nowMs - s_poseStart;
 
   if (el >= (uint32_t)s_morphMs + s_holdMs) {   // pose served its time
