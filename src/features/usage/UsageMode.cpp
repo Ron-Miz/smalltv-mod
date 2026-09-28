@@ -141,6 +141,20 @@ uint16_t usageBarsFullCount() { return s_nBarsFull; }
 uint16_t usageFaceFullCount() { return s_nFaceFull; }
 uint16_t usageFlipCount()     { return s_nFlips; }
 
+// A whole-screen change inside this mode — bars giving way to the idle face, or
+// back — clears the glass exactly the way a carousel switch does, so it gets the
+// same treatment: dip the backlight, repaint in the dark, bring it back. Skipped
+// when the light is already down, because main.cpp is then mid-transition and
+// owns the ramp; lighting up here would undo its fade.
+static bool dipBegin() {
+  if (gfxFadeLevel() != 100) return false;
+  gfxFadeTo(0, 120);
+  return true;
+}
+static void dipEnd(bool dipped) {
+  if (dipped) gfxFadeTo(100, 200);
+}
+
 // Last-drawn state of the accent flag, so a routine update can toggle just the
 // dot instead of a full-screen clear.
 static bool s_flagShown = false;
@@ -275,7 +289,9 @@ void UsageMode::service(const Settings& s) {
       }
     }
     if (needRender_) {
+      const bool dipped = fullRepaint ? dipBegin() : false;
       drawUsage(u, fullRepaint);
+      dipEnd(dipped);
       layoutPrimed_ = true;
       needRender_ = false;
     }
@@ -284,8 +300,10 @@ void UsageMode::service(const Settings& s) {
       showingFace_ = true;
       s_nFlips++;
       usageRenderedOk_ = 0xFFFFFFFF;
+      const bool dipped = dipBegin();
       faceReset(millis(), micros());
       drawFace(/*restart=*/true);
+      dipEnd(dipped);
     } else {
       faceSetPace(1, /*calm=*/false);   // the idle screen is the face's own
       if (faceTick(millis())) drawFace(/*restart=*/false);

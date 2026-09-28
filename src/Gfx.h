@@ -30,6 +30,17 @@ uint16_t gfxTint(uint16_t rgb565);
 void         gfxBegin(const Settings& s);
 void         gfxSetBrightness(uint8_t pct, bool inverted);
 void         gfxSetRotation(uint8_t r);
+
+// ---- Transitions ----------------------------------------------------------
+// The panel has no framebuffer and there is no room for one (240x240x2 is
+// 115 KB against an 80 KB arena), so a screen change is always a clear followed
+// by a repaint — visible as a black flash. The transition is therefore done on
+// the backlight instead of in pixels: dip the light, repaint in the dark, bring
+// it back. gfxSetFade is a 0..100 multiplier on top of the configured
+// brightness, so night mode and auto-brightness keep working through it.
+void         gfxSetFade(uint8_t pct);            // instant; the caller ramps
+void         gfxFadeTo(uint8_t pct, uint16_t ms);// blocking ramp, for rare swaps
+uint8_t      gfxFadeLevel();
 // Push the Display tab's colour settings to the panel: MADCTL colour order,
 // the inversion bit, and the per-channel gain gfxTint() applies. Callers repaint
 // afterwards — already-drawn pixels keep the previous correction.

@@ -92,32 +92,88 @@ static bool carouselHas(const Settings& s, const DisplayMode* m) {
   }
 }
 
-// Advance g_carIdx to the next ticked mode (stays put if none other is ticked).
-static void carouselNext(const Settings& s) {
+// The next ticked mode after the current one (stays put if none other is ticked).
+static size_t carouselPick(const Settings& s) {
   for (size_t hop = 1; hop <= kModeCount; hop++) {
     size_t cand = (g_carIdx + hop) % kModeCount;
-    if (!carouselHas(s, kModes[cand])) continue;
-    if (cand != g_carIdx) {
-      g_carIdx = cand;
-      kModes[cand]->wake(s);
-    }
-    return;
+    if (carouselHas(s, kModes[cand])) return cand;
   }
+  return g_carIdx;
 }
+
+// ---- mode transition ------------------------------------------------------
+// A switch repaints the whole panel, and with no framebuffer that repaint is
+// visible: the old screen is cleared to black, then the new one draws itself in
+// over a few tens of milliseconds. Dipping the backlight around it turns that
+// flash into a deliberate cross-fade through black — the only kind of
+// transition this panel can afford, since the 115 KB a slide would need does
+// not exist on the part.
+//
+// Run from loop() rather than blocking, so the web UI stays answerable through
+// the dip: each tick advances the ramp by elapsed time, and the swap happens at
+// the bottom, where nothing is visible.
+#define TRANS_OUT_MS 130
+#define TRANS_IN_MS  220
+
+enum { TR_IDLE = 0, TR_OUT = 1, TR_IN = 2 };
+static uint8_t  g_trPhase  = TR_IDLE;
+static uint32_t g_trStart  = 0;
+static size_t   g_trTarget = 0;
 
 static DisplayMode* activeMode(const Settings& s) {
   if (s.mode == MODE_CAROUSEL && kModeCount > 0) {
     if (g_carSwitch == 0) g_carSwitch = millis();
-    if (!carouselHas(s, kModes[g_carIdx])) carouselNext(s);   // settings changed
-    if (millis() - g_carSwitch >= (uint32_t)s.carouselSec * 1000UL) {
-      g_carSwitch = millis();
-      carouselNext(s);
+    if (g_trPhase == TR_IDLE) {
+      size_t want = g_carIdx;
+      if (!carouselHas(s, kModes[g_carIdx])) {
+        want = carouselPick(s);                  // settings changed under us
+      } else if (millis() - g_carSwitch >= (uint32_t)s.carouselSec * 1000UL) {
+        g_carSwitch = millis();
+        want = carouselPick(s);
+      }
+      if (want != g_carIdx) {
+        g_trTarget = want;
+        g_trPhase  = TR_OUT;
+        g_trStart  = millis();
+      }
     }
     return kModes[g_carIdx];
   }
   for (size_t i = 0; i < kModeCount; i++)
     if (kModes[i]->modeConst() == s.mode) return kModes[i];
   return kModeCount ? kModes[0] : nullptr;   // fall back to the first compiled mode
+}
+
+// Advance a switch in flight. Returns true while the caller should skip the
+// normal service() — during the dip the outgoing screen is frozen, and at the
+// bottom the incoming mode paints itself once, unseen.
+static bool transitionService(const Settings& s) {
+  if (g_trPhase == TR_IDLE) return false;
+  const uint32_t el = millis() - g_trStart;
+
+  if (g_trPhase == TR_OUT) {
+    if (el < TRANS_OUT_MS) {
+      gfxSetFade((uint8_t)(100 - 100UL * el / TRANS_OUT_MS));
+      return true;
+    }
+    gfxSetFade(0);
+    g_carIdx = g_trTarget;
+    kModes[g_carIdx]->wake(s);
+    kModes[g_carIdx]->service(s);    // the repaint nobody sees
+    g_carSwitch = millis();          // the new feature gets its full dwell
+    g_trPhase   = TR_IN;
+    g_trStart   = millis();
+    return true;
+  }
+
+  // TR_IN: back up to full, and let the mode service normally underneath.
+  if (el >= TRANS_IN_MS) {
+    gfxSetFade(100);
+    g_trPhase = TR_IDLE;
+  } else {
+    gfxSetFade((uint8_t)(100UL * el / TRANS_IN_MS));
+  }
+  return false;
 }
 
 static Settings g_settings;
@@ -314,6 +370,10 @@ void loop() {
 #endif
 
   DisplayMode* m = activeMode(g_settings);
+  if (transitionService(g_settings)) {
+    delay(5);
+    return;   // mid-dip: the glass is dark, nothing to draw
+  }
   if (m) {
     if (restore) m->wake(g_settings);
     m->service(g_settings);
