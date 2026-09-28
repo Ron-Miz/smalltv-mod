@@ -23,6 +23,8 @@ SessionsMode g_sessionsMode;
 // The name gets what is left — 40..175 at size 2, which is 11 characters.
 #define NAME_X          40
 #define NAME_MAX_CHARS  11
+#define PANEL_H         (ROW_H - 4)   // the row's filled panel
+#define TEXT2_H         16            // the default font at size 2, in pixels
 
 // The header is the title alone, centred, matching the usage screen.
 #define HDR_TITLE_Y  10
@@ -73,9 +75,10 @@ void SessionsMode::repaint() {
     const uint8_t want = pass == 0 ? SESSION_WORKING : pass == 1 ? SESSION_WAITING : SESSION_IDLE;
     for (uint8_t i = 0; i < SESSION_MAX && slot < SESSION_MAX; i++) {
       if (!rows[i].used || rows[i].state != want) continue;
-      const int y = ROW_TOP + slot * ROW_H;
-      gfx->fillRoundRect(6, y - 2, 228, ROW_H - 4, 6, S_PANEL);
-      gfx->fillCircle(DOT_X, y + 11, DOT_R, stateColor(rows[i].state));
+      const int ry = ROW_TOP + slot * ROW_H - 2;   // panel top
+      const int cy = ry + PANEL_H / 2;             // the line the row centres on
+      gfx->fillRoundRect(6, ry, 228, PANEL_H, 6, S_PANEL);
+      gfx->fillCircle(DOT_X, cy, DOT_R, stateColor(rows[i].state));
 
       // The name stays at size 2 and is clipped to the room it has, rather than
       // shrunk to size 1 to fit whole — a legible "clawdmeter-dae" beats an
@@ -85,14 +88,14 @@ void SessionsMode::repaint() {
       strlcpy(shown, name, sizeof(shown));
       gfx->setTextSize(2);
       gfx->setTextColor(C_WHITE);
-      gfx->setCursor(NAME_X, y + 6);
+      gfx->setCursor(NAME_X, cy - TEXT2_H / 2);
       gfx->print(shown);
 
       const char* word = want == SESSION_WORKING ? "run"
                        : want == SESSION_WAITING ? "you" : "idle";
       gfx->setTextSize(2);
       gfx->setTextColor(stateColor(want));
-      gfx->setCursor(230 - gfxTextW(word, 2), y + 6);
+      gfx->setCursor(230 - gfxTextW(word, 2), cy - TEXT2_H / 2);
       gfx->print(word);
       slot++;
     }
@@ -111,8 +114,8 @@ void SessionsMode::blinkDots() {
     for (uint8_t i = 0; i < SESSION_MAX && slot < SESSION_MAX; i++) {
       if (!rows[i].used || rows[i].state != want) continue;
       if (want == SESSION_WORKING) {
-        const int y = ROW_TOP + slot * ROW_H;
-        gfx->fillCircle(DOT_X, y + 11, DOT_R, blinkOn_ ? S_WORK : S_PANEL);
+        const int cy = ROW_TOP + slot * ROW_H - 2 + PANEL_H / 2;
+        gfx->fillCircle(DOT_X, cy, DOT_R, blinkOn_ ? S_WORK : S_PANEL);
       }
       slot++;
     }
