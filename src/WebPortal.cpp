@@ -19,6 +19,9 @@
 #if WITH_THEME
 #include "features/theme/ThemeWeb.h"
 #endif
+#if WITH_SESSIONS
+#include "features/sessions/Sessions.h"
+#endif
 #include "SettingsTransaction.h"
 #if WITH_HA
 #include "HaScreens.h"
@@ -85,6 +88,7 @@ static void handleGetConfig() {
   feat["radar"]  = (bool)WITH_RADAR;
   feat["ha"]     = (bool)WITH_HA;
   feat["theme"]  = (bool)WITH_THEME;
+  feat["sessions"] = (bool)WITH_SESSIONS;
   // WireGuard is a per-chip decision rather than a per-feature one: it is
   // compiled only where the image has room for it (the ESP32-C2 build).
 #if defined(SMALLTV_WIREGUARD)
@@ -382,6 +386,62 @@ static void handleSelfUpdate() {
 
 // Push endpoint: the daemon POSTs the usage payload here when the device can't
 // reach it (Wi-Fi client isolation). Body is the {s,sr,w,wr,st,ok} contract.
+#if WITH_SESSIONS
+// One session's state, pushed by a Claude Code hook on the PC:
+//   {"id":"ab12cd34","label":"smalltv-mod","state":"working"}
+// state "end" (or a DELETE-shaped {"end":true}) forgets the session.
+static void handleSessionPush() {
+  if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
+  JsonDocument doc;
+  if (deserializeJson(doc, server.arg("plain"))) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"bad json\"}");
+    return;
+  }
+  const char* id = doc["id"] | "";
+  if (!id[0]) {
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"no id\"}");
+    return;
+  }
+  const char* st = doc["state"] | "";
+  if (doc["end"].is<bool>() ? doc["end"].as<bool>() : (strcmp(st, "end") == 0)) {
+    sessionsDrop(id);
+    server.send(200, "application/json", "{\"ok\":true}");
+    return;
+  }
+  uint8_t state = SESSION_IDLE;
+  if      (strcmp(st, "working") == 0) state = SESSION_WORKING;
+  else if (strcmp(st, "waiting") == 0) state = SESSION_WAITING;
+  const bool ok = sessionsTouch(id, doc["label"] | "", state);
+  server.send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+// The list the web UI polls. Ages are seconds, so the page needs no clock.
+static void handleSessionsGet() {
+  if (!requireAuth()) return;
+  sessionsExpire();
+  JsonDocument doc;
+  JsonArray arr = doc["sessions"].to<JsonArray>();
+  const SessionRow* rows = sessionsAll();
+  const uint32_t now = millis();
+  for (uint8_t i = 0; i < SESSION_MAX; i++) {
+    if (!rows[i].used) continue;
+    JsonObject o = arr.add<JsonObject>();
+    o["id"]     = rows[i].id;
+    o["label"]  = rows[i].label;
+    o["state"]  = rows[i].state == SESSION_WORKING ? "working"
+                : rows[i].state == SESSION_WAITING ? "waiting" : "idle";
+    o["ageSec"] = (uint32_t)((now - rows[i].seenMs) / 1000);
+  }
+  sendJson(doc);
+}
+
+static void handleSessionsClear() {
+  if (!requireAuth()) return;
+  sessionsClear();
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+#endif  // WITH_SESSIONS
+
 static void handleUsagePush() {
   if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
 #if WITH_USAGE
@@ -517,6 +577,12 @@ void webPortalBegin(Settings& settings) {
   server.on("/api/checkupdate", HTTP_GET, handleCheckUpdate);
   server.on("/api/selfupdate", HTTP_POST, handleSelfUpdate);
   server.on("/api/usage", HTTP_POST, handleUsagePush);   // daemon pushes usage here
+#if WITH_SESSIONS
+  // Claude Code hooks push here; the web UI polls the list back.
+  server.on("/api/session",        HTTP_POST, handleSessionPush);
+  server.on("/api/sessions",       HTTP_GET,  handleSessionsGet);
+  server.on("/api/sessions/clear", HTTP_POST, handleSessionsClear);
+#endif
 #if WITH_HA
   server.on("/api/ha/clear", HTTP_POST, handleHaClear);  // purge HA screens (device + broker retained)
 #endif

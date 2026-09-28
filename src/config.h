@@ -240,6 +240,14 @@
 #ifndef WITH_HA
 #define WITH_HA 1
 #endif
+#ifndef WITH_SESSIONS
+#define WITH_SESSIONS 1
+#endif
+
+// A session nothing has reported for this long is dropped from the list. Long
+// enough to survive a slow tool call or a coffee break, short enough that a
+// machine that slept with a session open does not leave a ghost behind.
+#define SESSION_STALE_MS  (45UL * 60UL * 1000UL)   // 45 min
 
 // Claude usage mode: once data stops arriving for this long (PC asleep, daemon
 // stopped, network down) the screen switches from the stats to the idle face

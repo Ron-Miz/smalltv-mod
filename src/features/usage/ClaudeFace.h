@@ -58,9 +58,14 @@ bool faceTick(uint32_t nowMs);
 // eyes vacated or moved into are repainted.
 void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full);
 
-// The small header glyph on the usage stats screen: one pair of eyes scaled
-// into a 40x40 box at (x,y), drawn in `ink` over whatever is already there.
-void faceBadge(FaceCanvas& c, int16_t x, int16_t y, uint16_t ink);
+// Where the face draws, and how big. The default is the whole panel; the usage
+// screen sets a small box so the same live animation plays above the bars
+// instead of a static glyph. Scaling happens before the shapes are turned into
+// rectangles, so the difference painting stays exact at any size. Call this
+// before faceRender, and repaint fully on any change.
+void    faceSetViewport(int16_t x, int16_t y, uint8_t pct);
+int16_t faceViewW();
+int16_t faceViewH();
 
 // What is playing, and the hold of the pose now showing — diagnostics, and what
 // the host harness records alongside each frame.

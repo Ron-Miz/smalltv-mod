@@ -95,6 +95,24 @@ static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
   gfx->print(line);
 }
 
+// The face above the bars. A quarter scale puts the eye line at y=21 and the
+// widest squint inside y=11..31, clear of the 5h meter at y=50; the box is
+// centred, so it never reaches the status flag at x=228.
+#define FACE_MINI_PCT 25
+#define FACE_MINI_X   ((TFT_WIDTH - FACE_W * FACE_MINI_PCT / 100) / 2)
+#define FACE_MINI_Y   2
+
+// The same animation as the idle screen, just scaled — so the eyes go on
+// blinking and squinting above the numbers instead of sitting there as two
+// static bars.
+static void drawMini(bool full) {
+  Arduino_GFX* gfx = gfxDev();
+  if (!gfx) return;
+  GfxFaceCanvas fc(gfx);
+  faceSetViewport(FACE_MINI_X, FACE_MINI_Y, FACE_MINI_PCT);
+  faceRender(fc, C_BLACK, C_ACCENT, full);
+}
+
 // Last-drawn state of the accent flag, so a routine update can toggle just the
 // dot instead of a full-screen clear.
 static bool s_flagShown = false;
@@ -109,13 +127,9 @@ static void drawUsage(const UsageData& u, bool fullRepaint) {
     s_facePrimed = false;   // force a full redraw next time the idle face shows
     gfx->fillScreen(C_BLACK);
 
-    // Header: the same pair of eyes at badge scale + title.
-    GfxFaceCanvas fc(gfx);
-    faceBadge(fc, 6, 4, C_ACCENT);
-    gfx->setTextSize(3);
-    gfx->setTextColor(C_WHITE);
-    gfx->setCursor(56, 12);
-    gfx->print("CLAUDE");
+    // Header: the live face, small and centred. Drawn before the meters so its
+    // own clear cannot take the top of the 5h bar with it.
+    drawMini(/*full=*/true);
     s_flagShown = false;
   }
 
@@ -150,6 +164,7 @@ static void drawFace(bool restart) {
   if (!gfx) return;
   GfxFaceCanvas fc(gfx);
   const bool full = restart || !s_facePrimed;
+  faceSetViewport(0, 0, 100);        // back to the whole panel
   faceRender(fc, C_ACCENT, C_BLACK, full);
   s_facePrimed = true;
 }
@@ -221,10 +236,15 @@ void UsageMode::service(const Settings& s) {
         needRender_ = true;
       }
     }
+    // The face runs on the stats screen too, so its clock has to advance here
+    // as well as on the idle screen.
+    const bool posed = faceTick(millis());
     if (needRender_) {
       drawUsage(u, fullRepaint);
       layoutPrimed_ = true;
       needRender_ = false;
+    } else if (posed) {
+      drawMini(/*full=*/false);
     }
   } else {
     if (!showingFace_) {

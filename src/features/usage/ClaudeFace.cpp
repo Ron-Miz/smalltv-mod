@@ -46,12 +46,31 @@
 #define MORPH_MIN_MS    60
 #define MORPH_MAX_MS   220
 
-static inline int16_t eyeLX(int16_t ox) {
-  return (FACE_W - (EYE_W * 2 + EYE_GAP)) / 2 + EYE_OX + ox;
+// Viewport. The face normally fills the panel, but the usage screen wants the
+// same live eyes small above the bars. Rather than a second animation (or a
+// canvas that rescales finished rectangles, which rounds seams into the
+// difference painting), every length is scaled here at eval time: the shapes
+// that come out are already in whole device pixels, so paintEye and paintBent
+// stay exact and the small face is as flicker-free as the big one.
+static int16_t s_vx = 0, s_vy = 0;
+static uint8_t s_vpct = 100;
+
+static inline int16_t sc(int32_t v) { return (int16_t)((v * (int32_t)s_vpct) / 100); }
+
+void faceSetViewport(int16_t x, int16_t y, uint8_t pct) {
+  if (pct < 10) pct = 10;
+  s_vx = x; s_vy = y; s_vpct = pct;
 }
-static inline int16_t eyeRX(int16_t ox) { return eyeLX(ox) + EYE_W + EYE_GAP; }
-static inline int16_t eyeY()            { return (FACE_H - EYE_H) / 2 - EYE_OY; }
-static inline int16_t eyeCY()           { return eyeY() + EYE_H / 2; }
+int16_t faceViewW() { return sc(FACE_W); }
+int16_t faceViewH() { return sc(FACE_H); }
+static inline int16_t eyeW()            { return sc(EYE_W); }
+
+static inline int16_t eyeLX(int16_t ox) {
+  return s_vx + sc((FACE_W - (EYE_W * 2 + EYE_GAP)) / 2 + EYE_OX + ox);
+}
+static inline int16_t eyeRX(int16_t ox) { return eyeLX(ox) + sc(EYE_W + EYE_GAP); }
+static inline int16_t eyeY()            { return s_vy + sc((FACE_H - EYE_H) / 2 - EYE_OY); }
+static inline int16_t eyeCY()           { return eyeY() + sc(EYE_H) / 2; }
 
 static inline int16_t lo16(int16_t a, int16_t b) { return a < b ? a : b; }
 static inline int16_t hi16(int16_t a, int16_t b) { return a > b ? a : b; }
@@ -260,11 +279,11 @@ static inline int16_t lerp16(int16_t a, int16_t b, uint8_t p) {
 static void evalNow(EyeGeom out[2], int16_t* ox) {
   const uint8_t p = ease(s_progress);
   for (uint8_t i = 0; i < 2; i++) {
-    out[i].w    = lerp16(s_from[i].w,    s_to[i].w,    p);
-    out[i].h    = lerp16(s_from[i].h,    s_to[i].h,    p);
-    out[i].bend = lerp16(s_from[i].bend, s_to[i].bend, p);
+    out[i].w    = sc(lerp16(s_from[i].w,    s_to[i].w,    p));
+    out[i].h    = sc(lerp16(s_from[i].h,    s_to[i].h,    p));
+    out[i].bend = sc(lerp16(s_from[i].bend, s_to[i].bend, p));
   }
-  *ox = lerp16(s_fromOx, s_toOx, p);
+  *ox = lerp16(s_fromOx, s_toOx, p);   // scaled with the eye position, not here
 }
 
 // Aim the tween at the pose now current. The origin is where the eyes actually
@@ -358,7 +377,7 @@ bool faceTick(uint32_t nowMs) {
 // Drawing
 // ---------------------------------------------------------------------------
 static Box geomBox(const EyeGeom& g, int16_t x) {
-  const int16_t cx = (int16_t)(x + EYE_W / 2);
+  const int16_t cx = (int16_t)(x + eyeW() / 2);
   Box b;
   b.x = (int16_t)(cx - g.w / 2);
   b.w = g.w;
@@ -383,7 +402,7 @@ static int16_t chevOff(const EyeGeom& g, bool apexRight, int16_t i) {
 static void drawEye(FaceCanvas& c, const EyeGeom& g, int16_t x,
                     bool apexRight, uint16_t ink) {
   if (g.w <= 0 || g.h <= 0) return;
-  const int16_t cx = (int16_t)(x + EYE_W / 2);
+  const int16_t cx = (int16_t)(x + eyeW() / 2);
   const int16_t cy = eyeCY();
 
   if (g.bend <= 0) {
@@ -528,7 +547,7 @@ static void paintEye(FaceCanvas& c, const EyeGeom& oldG, const Box& oldB,
                      const EyeGeom& newG, const Box& newB,
                      int16_t x, bool apexRight, uint16_t bg, uint16_t ink) {
   if (oldG.bend > 0 || newG.bend > 0) {
-    paintBent(c, oldG, newG, (int16_t)(x + EYE_W / 2), apexRight, bg, ink);
+    paintBent(c, oldG, newG, (int16_t)(x + eyeW() / 2), apexRight, bg, ink);
     return;
   }
   // Both flat: the whole eye is one rectangle, so four bands describe the
@@ -547,7 +566,7 @@ void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full) {
 
   c.begin();
   if (full) {
-    c.fillRect(0, 0, FACE_W, FACE_H, bg);
+    c.fillRect(s_vx, s_vy, sc(FACE_W), sc(FACE_H), bg);
     drawEye(c, g[0], lx, /*apexRight=*/true,  ink);   // left eye squints as ">"
     drawEye(c, g[1], rx, /*apexRight=*/false, ink);   // right eye as "<"
   } else {
@@ -562,12 +581,3 @@ void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full) {
 
 // The stats screen's corner glyph: the same pair of eyes at roughly a third
 // scale, with the gap pulled in so they fit the 40x40 box the header reserves.
-void faceBadge(FaceCanvas& c, int16_t x, int16_t y, uint16_t ink) {
-  const int16_t w = EYE_W / 3, h = EYE_H / 3, gap = 12;   // 10 x 20, 32 px wide
-  const int16_t x0 = (int16_t)(x + (40 - (w * 2 + gap)) / 2);
-  const int16_t y0 = (int16_t)(y + (40 - h) / 2);
-  c.begin();
-  c.fillRect(x0, y0, w, h, ink);
-  c.fillRect((int16_t)(x0 + w + gap), y0, w, h, ink);
-  c.end();
-}
