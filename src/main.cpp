@@ -39,6 +39,9 @@
 #include "HaMode.h"
 #include "MqttClient.h"
 #endif
+#if WITH_SESSIONS
+#include "features/sessions/SessionsMode.h"
+#endif
 
 // ---- mode registry --------------------------------------------------------
 // The compiled-in features, in display order. main.cpp holds no per-feature
@@ -56,6 +59,9 @@ static DisplayMode* kModes[] = {
 #if WITH_HA
   &g_haMode,
 #endif
+#if WITH_SESSIONS
+  &g_sessionsMode,
+#endif
 #if WITH_THEME
   &g_themeMode,
 #endif
@@ -72,6 +78,9 @@ static bool carouselHas(const Settings& s, const DisplayMode* m) {
   switch (m->modeConst()) {
     case MODE_STOCKS: return s.carouselTicker;
     case MODE_USAGE:  return s.carouselUsage;
+#if WITH_SESSIONS
+    case MODE_SESSIONS: return s.carouselSessions;
+#endif
     case MODE_RADAR:  return s.carouselRadar;
 #if WITH_HA
     case MODE_HA:     return s.carouselHa;

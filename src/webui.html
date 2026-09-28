@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SmallTV</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZDk3NzU3IiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iNyIgeT0iMTMiIHdpZHRoPSI1MCIgaGVpZ2h0PSIzOCIgcng9IjYiLz48cG9seWxpbmUgcG9pbnRzPSIxNSwzOCAyMywzMCAzMCwzNCAzNywyMiA0NCwyOCA1MCwyMCIvPjxwYXRoIGQ9Ik0yNCA1MXY2TTQwIDUxdjZNMjAgNTdoOE0zNiA1N2g4Ii8+PC9nPjwvc3ZnPg==">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMmY1ZDhhIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iNyIgeT0iMTMiIHdpZHRoPSI1MCIgaGVpZ2h0PSIzOCIgcng9IjYiLz48cG9seWxpbmUgcG9pbnRzPSIxNSwzOCAyMywzMCAzMCwzNCAzNywyMiA0NCwyOCA1MCwyMCIvPjxwYXRoIGQ9Ik0yNCA1MXY2TTQwIDUxdjZNMjAgNTdoOE0zNiA1N2g4Ii8+PC9nPjwvc3ZnPg==">
 <style>
 /* SmallTV console.
    Two themes from one token set: :root carries light, and the dark values are
@@ -15,38 +15,38 @@
    state, and a UI whose brand colour collides with its status colours cannot
    be read at a glance. */
 :root{
- --bg:#f5f6fa; --surf:#fff; --surf2:#fafbfd; --inset:#eef0f6;
- --bd:#e1e4ed; --bd2:#cfd4e2;
- --fg:#161923; --fg2:#3c4354; --mut:#6b7387;
- --acc:#5d4ee0; --acc-ink:#fff; --acc-soft:rgba(93,78,224,.1);
- --ok:#0f9d63; --ok-soft:rgba(15,157,99,.12);
- --busy:#d92b3d; --busy-soft:rgba(217,43,61,.12);
- --warn:#b3730a;
- --shadow:0 1px 2px rgba(19,22,33,.06),0 4px 14px rgba(19,22,33,.05);
+ --bg:#fafafa; --surf:#fff; --surf2:#f7f7f8; --inset:#f3f3f4;
+ --bd:#e6e6e8; --bd2:#d3d3d8;
+ --fg:#18181b; --fg2:#3f3f46; --mut:#71717a;
+ --acc:#2f5d8a; --acc-ink:#fff; --acc-soft:rgba(47,93,138,.09);
+ --ok:#15764a; --ok-soft:rgba(21,118,74,.12);
+ --busy:#b02330; --busy-soft:rgba(176,35,48,.11);
+ --warn:#8a5a09;
+ --shadow:0 1px 2px rgba(24,24,27,.05);
  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
- --r:10px; --rail:196px;
+ --r:8px; --rail:192px;
 }
 @media (prefers-color-scheme:dark){
  :root:not([data-theme="light"]){
-  --bg:#0b0d13; --surf:#141826; --surf2:#11141f; --inset:#080a10;
-  --bd:#222839; --bd2:#333b52;
-  --fg:#e7eaf3; --fg2:#bcc3d4; --mut:#858da3;
-  --acc:#8b7cff; --acc-ink:#12101f; --acc-soft:rgba(139,124,255,.14);
-  --ok:#3ed492; --ok-soft:rgba(62,212,146,.14);
-  --busy:#ff5a67; --busy-soft:rgba(255,90,103,.14);
-  --warn:#e8a33d;
-  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+ --bg:#0a0a0b; --surf:#141417; --surf2:#101012; --inset:#0d0d0f;
+  --bd:#26262b; --bd2:#3a3a42;
+  --fg:#f4f4f5; --fg2:#d0d0d6; --mut:#8b8b94;
+  --acc:#7fa9d6; --acc-ink:#0a0a0b; --acc-soft:rgba(127,169,214,.13);
+  --ok:#43c08a; --ok-soft:rgba(67,192,138,.14);
+  --busy:#ef6b6b; --busy-soft:rgba(239,107,107,.14);
+  --warn:#d69b45;
+  --shadow:0 1px 2px rgba(0,0,0,.5);
  }
 }
 :root[data-theme="dark"]{
- --bg:#0b0d13; --surf:#141826; --surf2:#11141f; --inset:#080a10;
- --bd:#222839; --bd2:#333b52;
- --fg:#e7eaf3; --fg2:#bcc3d4; --mut:#858da3;
- --acc:#8b7cff; --acc-ink:#12101f; --acc-soft:rgba(139,124,255,.14);
- --ok:#3ed492; --ok-soft:rgba(62,212,146,.14);
- --busy:#ff5a67; --busy-soft:rgba(255,90,103,.14);
- --warn:#e8a33d;
- --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+--bg:#0a0a0b; --surf:#141417; --surf2:#101012; --inset:#0d0d0f;
+ --bd:#26262b; --bd2:#3a3a42;
+ --fg:#f4f4f5; --fg2:#d0d0d6; --mut:#8b8b94;
+ --acc:#7fa9d6; --acc-ink:#0a0a0b; --acc-soft:rgba(127,169,214,.13);
+ --ok:#43c08a; --ok-soft:rgba(67,192,138,.14);
+ --busy:#ef6b6b; --busy-soft:rgba(239,107,107,.14);
+ --warn:#d69b45;
+ --shadow:0 1px 2px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box}
 html{color-scheme:light dark}
@@ -78,7 +78,7 @@ nav button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
  transition:color .12s,background .12s}
 nav button::before{content:"";width:5px;height:5px;border-radius:50%;
  background:currentColor;opacity:.32;flex:0 0 auto;transition:opacity .12s}
-nav button:hover{color:var(--fg);background:var(--acc-soft)}
+nav button:hover{color:var(--fg);background:var(--inset)}
 nav button.active{color:var(--acc);background:var(--acc-soft);font-weight:600}
 nav button.active::before{opacity:1}
 main{min-width:0}
@@ -121,10 +121,10 @@ input[type=file]::file-selector-button{background:var(--inset);color:var(--fg);f
 .req code,code{font-family:var(--mono);font-size:12px;color:var(--acc);
  background:var(--acc-soft);padding:1px 5px;border-radius:5px}
 
-button.btn{background:var(--acc);color:var(--acc-ink);border:0;cursor:pointer;
+button.btn{background:var(--fg);color:var(--bg);border:0;cursor:pointer;
  padding:10px 17px;border-radius:var(--r);font:inherit;font-size:14px;font-weight:600;
  transition:filter .12s}
-button.btn:hover{filter:brightness(1.07)}
+button.btn:hover{opacity:.86}
 button.btn.sec{background:var(--inset);color:var(--fg);box-shadow:inset 0 0 0 1px var(--bd)}
 button.btn.danger{background:transparent;color:var(--busy);box-shadow:inset 0 0 0 1px var(--busy)}
 button.btn.danger:hover{background:var(--busy-soft);filter:none}
@@ -160,7 +160,7 @@ td{padding:6px 4px}
 
 .bar{height:6px;background:var(--inset);border-radius:99px;overflow:hidden;margin-top:10px;
  box-shadow:inset 0 0 0 1px var(--bd)}
-.bar>div{height:100%;width:0;background:var(--acc);border-radius:99px;transition:width .25s}
+.bar>div{height:100%;width:0;background:var(--fg2);border-radius:99px;transition:width .25s}
 
 small.hint{display:block;color:var(--mut);margin-top:5px;font-size:12px;line-height:1.5}
 .chip{display:inline-block;margin-left:9px;padding:2px 8px;border-radius:99px;
@@ -273,6 +273,7 @@ small.hint{display:block;color:var(--mut);margin-top:5px;font-size:12px;line-hei
    <select id="mode" onchange="modeChanged()">
     <option value="stocks">Ticker</option>
     <option value="usage">Clawdmeter</option>
+    <option value="sessions">Sessions</option>
     <option value="radar">Radar</option>
     <option value="ha">Home Assistant</option>
     <option value="theme">Theme clock</option>
@@ -282,6 +283,7 @@ small.hint{display:block;color:var(--mut);margin-top:5px;font-size:12px;line-hei
     <label>Switch mode every (s)</label><input id="carouselSec" type="number" min="5" max="3600">
     <div class="chk"><input id="carouselTicker" type="checkbox"><label>Ticker</label></div>
     <div class="chk"><input id="carouselUsage" type="checkbox"><label>Clawdmeter</label></div>
+    <div class="chk"><input id="carouselSessions" type="checkbox"><label>Sessions</label></div>
     <div class="chk"><input id="carouselRadar" type="checkbox"><label>Radar</label></div>
     <div class="chk"><input id="carouselHa" type="checkbox"><label>Home Assistant</label></div>
    </div>
@@ -682,8 +684,8 @@ var TZMAP={
 function fillTz(){var s=$('tz');if(!s)return;var keys=Object.keys(TZMAP).filter(function(k){return k!==''});
  keys.sort();s.innerHTML='<option value="">UTC</option>'+keys.map(function(k){return '<option value="'+k+'">'+k+'</option>'}).join('');}
 
-var MODEOPT={ticker:'stocks',usage:'usage',radar:'radar',ha:'ha',theme:'theme'};
-var CAROPT={ticker:'carouselTicker',usage:'carouselUsage',radar:'carouselRadar',ha:'carouselHa'};
+var MODEOPT={ticker:'stocks',usage:'usage',radar:'radar',ha:'ha',theme:'theme',sessions:'sessions'};
+var CAROPT={ticker:'carouselTicker',usage:'carouselUsage',radar:'carouselRadar',ha:'carouselHa',sessions:'carouselSessions'};
 function hideFeat(name){
  var b=document.querySelector('nav button[data-t="'+name+'"]'); if(b)b.remove();
  var sec=$(name); if(sec)sec.remove();
@@ -740,7 +742,7 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('ntp1',ck.ntp1||''); sv('ntp2',ck.ntp2||'');
  $('mode').value=c.mode||'stocks'; modeChanged();
  sv('carouselSec',c.carouselSec||30);
- sc('carouselTicker',c.carouselTicker!==false); sc('carouselUsage',c.carouselUsage!==false); sc('carouselRadar',c.carouselRadar!==false);
+ sc('carouselTicker',c.carouselTicker!==false); sc('carouselUsage',c.carouselUsage!==false); sc('carouselSessions',c.carouselSessions!==false); sc('carouselRadar',c.carouselRadar!==false);
  sc('carouselHa',c.carouselHa!==false);
  // HA / MQTT slice
  var h=c.ha||{};
@@ -829,7 +831,7 @@ function radarSrcChanged(){if(!$('radarSource'))return;var v=$('radarSource').va
 function collect(){
  var o={mode:gv('mode'),
   carouselSec:parseInt(gv('carouselSec'))||30,
-  carouselTicker:gc('carouselTicker'), carouselUsage:gc('carouselUsage'), carouselRadar:gc('carouselRadar'),
+  carouselTicker:gc('carouselTicker'), carouselUsage:gc('carouselUsage'), carouselSessions:gc('carouselSessions'), carouselRadar:gc('carouselRadar'),
   carouselHa:gc('carouselHa'),
   brightness:parseInt(gv('brightness'))||0,
   rotation:parseInt(gv('rotation')),

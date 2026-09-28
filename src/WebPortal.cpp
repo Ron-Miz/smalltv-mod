@@ -8,6 +8,9 @@
 #include "OtaUpdate.h"
 #include "StockClient.h"
 #include "UsageClient.h"
+#if WITH_USAGE
+#include "features/usage/UsageMode.h"
+#endif
 #if WITH_RADAR
 #include "RadarClient.h"
 #endif
@@ -137,6 +140,11 @@ static void handleStatus() {
     JsonObject uo = o["usage"].to<JsonObject>();
     uo["valid"]  = ud.valid;
     uo["ageSec"] = ud.lastOkMs ? (int32_t)((millis() - ud.lastOkMs) / 1000) : -1;
+    // Full-screen repaints since boot: the only events on this screen that can
+    // read as a flash.
+    uo["barsFull"] = usageBarsFullCount();
+    uo["faceFull"] = usageFaceFullCount();
+    uo["flips"]    = usageFlipCount();
   }
 #endif
   o["synced"] = clockSynced();

@@ -43,8 +43,8 @@
 // bounded so a 110 ms flutter still snaps and a 2 s rest does not spend two
 // seconds closing an eyelid.
 #define FACE_FRAME_MS   33   // ~30 fps while morphing; nothing is drawn at rest
-#define MORPH_MIN_MS    60
-#define MORPH_MAX_MS   220
+#define MORPH_MIN_MS   120
+#define MORPH_MAX_MS   260
 
 // Viewport. The face normally fills the panel, but the usage screen wants the
 // same live eyes small above the bars. Rather than a second animation (or a
@@ -99,11 +99,9 @@ static const FacePose kWiggle[] = {          // look about, then blink twice
   {SH_OPEN, SH_OPEN,   0, 140}, {SH_SHUT, SH_SHUT,   0, 140},
   {SH_OPEN, SH_OPEN,   0, 260},
 };
-static const FacePose kSquint[] = {          // three > < squints
-  {SH_CHEV, SH_CHEV, 0, 320}, {SH_BAR,  SH_BAR,  0, 200},
-  {SH_CHEV, SH_CHEV, 0, 320}, {SH_BAR,  SH_BAR,  0, 200},
-  {SH_CHEV, SH_CHEV, 0, 320}, {SH_BAR,  SH_BAR,  0, 200},
-  {SH_CHEV, SH_CHEV, 0, 520}, {SH_OPEN, SH_OPEN, 0, 200},
+static const FacePose kSquint[] = {          // two unhurried > < squints
+  {SH_CHEV, SH_CHEV, 0, 620}, {SH_BAR,  SH_BAR,  0, 360},
+  {SH_CHEV, SH_CHEV, 0, 760}, {SH_OPEN, SH_OPEN, 0, 300},
 };
 static const FacePose kWink[] = {            // one eye squints, the other watches
   {SH_OPEN, SH_OPEN, 0, 200}, {SH_CHEV, SH_OPEN, 0, 420},
@@ -391,11 +389,18 @@ static Box geomBox(const EyeGeom& g, int16_t x) {
 // and stays one fill; a bent one is drawn column by column, the two bars
 // converging on the apex. `apexRight` puts the point of a > on the right.
 // Vertical offset of the arm at column `i`, quantised to a stair.
+// The stair scales with the viewport, floored at 2px: a fixed 5px step leaves a
+// quarter-scale chevron with two stairs, which is a blob rather than a "> <".
+static inline int16_t chevStep() {
+  const int16_t st = sc(CHEV_STEP);
+  return st < 2 ? 2 : st;
+}
 static int16_t chevOff(const EyeGeom& g, bool apexRight, int16_t i) {
   const int16_t span = (int16_t)(g.w - 1);
   if (span <= 0) return 0;
+  const int16_t step = chevStep();
   int16_t n = apexRight ? (int16_t)(span - i) : i;
-  n = (int16_t)((n / CHEV_STEP) * CHEV_STEP);
+  n = (int16_t)((n / step) * step);
   return (int16_t)(((int32_t)g.bend * n) / span);
 }
 

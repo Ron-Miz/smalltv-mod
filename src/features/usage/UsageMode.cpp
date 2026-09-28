@@ -98,7 +98,7 @@ static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
 // The face above the bars. A quarter scale puts the eye line at y=21 and the
 // widest squint inside y=11..31, clear of the 5h meter at y=50; the box is
 // centred, so it never reaches the status flag at x=228.
-#define FACE_MINI_PCT 25
+#define FACE_MINI_PCT 32
 #define FACE_MINI_X   ((TFT_WIDTH - FACE_W * FACE_MINI_PCT / 100) / 2)
 #define FACE_MINI_Y   2
 
@@ -113,6 +113,17 @@ static void drawMini(bool full) {
   faceRender(fc, C_BLACK, C_ACCENT, full);
 }
 
+// Whole-screen repaints are the only thing on this screen that can read as a
+// flash: everything else is painted by difference. Counting them makes "it
+// flickers sometimes" answerable from /api/status instead of by watching the
+// glass and hoping to catch one.
+static uint16_t s_nBarsFull = 0;   // stats layout cleared and redrawn
+static uint16_t s_nFaceFull = 0;   // idle face cleared and redrawn
+static uint16_t s_nFlips    = 0;   // switches between the two screens
+uint16_t usageBarsFullCount() { return s_nBarsFull; }
+uint16_t usageFaceFullCount() { return s_nFaceFull; }
+uint16_t usageFlipCount()     { return s_nFlips; }
+
 // Last-drawn state of the accent flag, so a routine update can toggle just the
 // dot instead of a full-screen clear.
 static bool s_flagShown = false;
@@ -124,6 +135,7 @@ static void drawUsage(const UsageData& u, bool fullRepaint) {
   if (!gfx) return;
 
   if (fullRepaint) {
+    s_nBarsFull++;
     s_facePrimed = false;   // force a full redraw next time the idle face shows
     gfx->fillScreen(C_BLACK);
 
@@ -164,6 +176,7 @@ static void drawFace(bool restart) {
   if (!gfx) return;
   GfxFaceCanvas fc(gfx);
   const bool full = restart || !s_facePrimed;
+  if (full) s_nFaceFull++;
   faceSetViewport(0, 0, 100);        // back to the whole panel
   faceRender(fc, C_ACCENT, C_BLACK, full);
   s_facePrimed = true;
@@ -227,7 +240,7 @@ void UsageMode::service(const Settings& s) {
 
   if (usageFresh(staleMs)) {
     bool fullRepaint = !layoutPrimed_;
-    if (showingFace_) { showingFace_ = false; needRender_ = true; fullRepaint = true; }
+    if (showingFace_) { showingFace_ = false; needRender_ = true; fullRepaint = true; s_nFlips++; }
     if (u.lastOkMs != usageRenderedOk_) {
       usageRenderedOk_ = u.lastOkMs;
       if (contentChanged(u)) {
@@ -249,6 +262,7 @@ void UsageMode::service(const Settings& s) {
   } else {
     if (!showingFace_) {
       showingFace_ = true;
+      s_nFlips++;
       usageRenderedOk_ = 0xFFFFFFFF;
       faceReset(millis(), micros());
       drawFace(/*restart=*/true);

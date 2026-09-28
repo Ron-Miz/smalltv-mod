@@ -141,6 +141,7 @@
 #define MODE_NOTIFY    4             // transient overlay: armed over HTTP, never persisted
 #define MODE_THEME     6             // declarative installed clock faces
 #define MODE_HA        5             // Home Assistant screens pushed over MQTT
+#define MODE_SESSIONS  7             // live Claude Code sessions, fed by hooks
 #define DEFAULT_MODE MODE_STOCKS
 #define DEFAULT_CAROUSEL_SEC 30      // per-mode dwell in carousel
 

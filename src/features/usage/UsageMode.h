@@ -51,3 +51,11 @@ class UsageMode : public DisplayMode {
 };
 
 extern UsageMode g_usageMode;
+
+// Whole-screen repaint counters, reported by /api/status. Everything else on
+// this screen is painted by difference, so these are the only events that can
+// look like a flash — which makes an intermittent flicker measurable rather
+// than a matter of catching it by eye.
+uint16_t usageBarsFullCount();
+uint16_t usageFaceFullCount();
+uint16_t usageFlipCount();

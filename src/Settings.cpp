@@ -443,6 +443,7 @@ void Settings::setDefaults() {
   themeId = "";
   carouselSec = DEFAULT_CAROUSEL_SEC;
   carouselTicker = carouselUsage = carouselRadar = carouselHa = true;
+  carouselSessions = true;
   httpTimeout = DEFAULT_HTTP_TIMEOUT;
 
   brightness = DEFAULT_BRIGHTNESS;
@@ -525,11 +526,13 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
   root["mode"]              = (s.mode == MODE_THEME)    ? "theme"
                             : (s.mode == MODE_RADAR)    ? "radar"
                             : (s.mode == MODE_USAGE)    ? "usage"
+                            : (s.mode == MODE_SESSIONS) ? "sessions"
                             : (s.mode == MODE_HA)       ? "ha"
                             : (s.mode == MODE_CAROUSEL) ? "carousel" : "stocks";
   root["carouselSec"]       = s.carouselSec;
   root["carouselTicker"]    = s.carouselTicker;
   root["carouselUsage"]     = s.carouselUsage;
+  root["carouselSessions"]  = s.carouselSessions;
   root["carouselRadar"]     = s.carouselRadar;
   root["carouselHa"]        = s.carouselHa;
   root["httpTimeout"]       = s.httpTimeout;
@@ -598,6 +601,7 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
     s.mode = m.equalsIgnoreCase("theme")    ? MODE_THEME
            : m.equalsIgnoreCase("radar")    ? MODE_RADAR
            : m.equalsIgnoreCase("usage")    ? MODE_USAGE
+           : m.equalsIgnoreCase("sessions") ? MODE_SESSIONS
            : m.equalsIgnoreCase("ha")       ? MODE_HA
            : m.equalsIgnoreCase("carousel") ? MODE_CAROUSEL : MODE_STOCKS;
   }
@@ -613,6 +617,7 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
   if (root["carouselSec"].is<int>())      s.carouselSec = constrain((int)root["carouselSec"], 5, 3600);
   if (root["carouselTicker"].is<bool>())  s.carouselTicker = root["carouselTicker"];
   if (root["carouselUsage"].is<bool>())   s.carouselUsage = root["carouselUsage"];
+  if (root["carouselSessions"].is<bool>()) s.carouselSessions = root["carouselSessions"];
   if (root["carouselRadar"].is<bool>())   s.carouselRadar = root["carouselRadar"];
   if (root["carouselHa"].is<bool>())      s.carouselHa = root["carouselHa"];
 
