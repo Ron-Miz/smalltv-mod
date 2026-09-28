@@ -36,7 +36,7 @@ LOG_PATH = os.path.expanduser("~/.claude/smalltv-hook.log")
 LOG_MAX = 64 * 1024
 
 
-def _log(state: str, session_id: str, label: str) -> None:
+def _log(state: str, session_id: str, label: str, event: str = "?") -> None:
     """Record what actually fired.
 
     Which events a given Claude Code build raises for an interrupted turn is not
@@ -47,9 +47,9 @@ def _log(state: str, session_id: str, label: str) -> None:
         if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > LOG_MAX:
             os.replace(LOG_PATH, LOG_PATH + ".1")
         with open(LOG_PATH, "a") as fh:
-            fh.write("%s %-8s %s %s\n" % (
+            fh.write("%s %-16s -> %-8s %s %s\n" % (
                 __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                state, session_id, label))
+                event, state, session_id, label))
     except Exception:
         pass
 
@@ -79,7 +79,9 @@ def main() -> int:
     cwd = payload.get("cwd") or os.getcwd()
     label = os.path.basename(os.path.normpath(cwd))[:23]
 
-    _log(state, session_id, label)
+    # The payload names the event that fired, which is the one thing worth
+    # knowing when three different events all map to "waiting".
+    _log(state, session_id, label, str(payload.get("hook_event_name") or "?"))
 
     body = json.dumps({"id": session_id, "label": label, "state": state}).encode()
     url = "http://%s/api/session" % device
