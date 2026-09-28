@@ -235,8 +235,18 @@ void UsageMode::service(const Settings& s) {
 
   const UsageData& u = usageGet();
 
-  // Considered stale after ~2 missed polls (plus a grace) — then show the face.
-  uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 2UL + USAGE_STALE_GRACE_MS;
+  // Considered stale after ~6 missed polls (plus a grace) — then show the face.
+  //
+  // Six, not two, because of what actually drives this boundary: the daemon
+  // lives on a laptop, and a laptop sleeps. Every crossing costs a full-screen
+  // clear in each direction, and at two missed polls a lid closed for a couple
+  // of minutes was enough to make the panel flash twice. The counters above
+  // measured 63 crossings in about ninety minutes against daemon log gaps of
+  // 8, 7 and 18 minutes — the flicker was the boundary, not the animation.
+  // Three minutes of silence at the default poll is a real absence rather than
+  // a nap, and the other direction stays immediate: fresh numbers still appear
+  // on the very next poll.
+  uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 6UL + USAGE_STALE_GRACE_MS;
 
   if (usageFresh(staleMs)) {
     bool fullRepaint = !layoutPrimed_;
