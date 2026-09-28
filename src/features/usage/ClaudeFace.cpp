@@ -193,6 +193,14 @@ static uint8_t  s_mirror   = 0;
 static bool     s_resting  = true;
 static uint16_t s_restHold = 0;
 
+// How long the face sits still between routines, as a multiple of the base
+// rest. The idle screen is the whole panel and something happening every
+// couple of seconds reads as alive; the same cadence in a 20px header strip
+// above the numbers reads as fidgeting, because the eye keeps being pulled
+// back to a thing that is not the point of that screen.
+static uint8_t s_restMult = 1;
+void faceSetPace(uint8_t restMult) { s_restMult = restMult ? restMult : 1; }
+
 // Tween: the eyes travel from s_from to s_to over s_morphMs, then hold still
 // for s_holdMs. s_progress is the raw 0..255 position, eased at render time.
 static EyeGeom  s_from[2], s_to[2];
@@ -323,7 +331,12 @@ static void stepPose(uint32_t now) {
     s_pose++;
   } else {
     s_resting  = true;
-    s_restHold = rndRange(REST_MIN_MS, REST_MAX_MS);
+    // uint16 would overflow at a multiplier of 21, so cap the span rather than
+    // letting a long rest wrap into a frantic one.
+    uint32_t lo = (uint32_t)REST_MIN_MS * s_restMult;
+    uint32_t hi = (uint32_t)REST_MAX_MS * s_restMult;
+    if (hi > 60000UL) { hi = 60000UL; if (lo > hi) lo = hi; }
+    s_restHold = rndRange((uint16_t)lo, (uint16_t)hi);
   }
   armTween(now);
 }

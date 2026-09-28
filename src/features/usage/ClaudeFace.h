@@ -64,6 +64,11 @@ void faceRender(FaceCanvas& c, uint16_t bg, uint16_t ink, bool full);
 // rectangles, so the difference painting stays exact at any size. Call this
 // before faceRender, and repaint fully on any change.
 void    faceSetViewport(int16_t x, int16_t y, uint8_t pct);
+
+// Multiplier on the rest between routines. 1 is the idle screen's own pace;
+// higher leaves the eyes still for longer, which is what a small face sharing
+// a screen with the numbers wants.
+void    faceSetPace(uint8_t restMult);
 int16_t faceViewW();
 int16_t faceViewH();
 

@@ -102,6 +102,11 @@ static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
 #define FACE_MINI_X   ((TFT_WIDTH - FACE_W * FACE_MINI_PCT / 100) / 2)
 #define FACE_MINI_Y   2
 
+// Rest between routines on the stats screen, as a multiple of the idle
+// screen's. At 1 the eyes do something every second or three, which is right
+// for a full-panel face and reads as fidgeting in a header strip.
+#define FACE_MINI_REST_MULT 6
+
 // The same animation as the idle screen, just scaled — so the eyes go on
 // blinking and squinting above the numbers instead of sitting there as two
 // static bars.
@@ -260,7 +265,9 @@ void UsageMode::service(const Settings& s) {
       }
     }
     // The face runs on the stats screen too, so its clock has to advance here
-    // as well as on the idle screen.
+    // as well as on the idle screen — at a much longer rest, because the eyes
+    // are a detail on this screen rather than the whole of it.
+    faceSetPace(FACE_MINI_REST_MULT);
     const bool posed = faceTick(millis());
     if (needRender_) {
       drawUsage(u, fullRepaint);
@@ -276,8 +283,9 @@ void UsageMode::service(const Settings& s) {
       usageRenderedOk_ = 0xFFFFFFFF;
       faceReset(millis(), micros());
       drawFace(/*restart=*/true);
-    } else if (faceTick(millis())) {
-      drawFace(/*restart=*/false);
+    } else {
+      faceSetPace(1);                 // the idle screen is the face's own
+      if (faceTick(millis())) drawFace(/*restart=*/false);
     }
   }
 }

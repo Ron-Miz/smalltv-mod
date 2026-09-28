@@ -633,8 +633,11 @@ function hookSnippet(){
   return '    "'+name+'": [{ "hooks": [{ "type": "command", "async": true,\n'+
          '        "command": "'+cmd.replace('%s',state)+'" }] }]';
  }
+ // StopFailure as well as Stop: interrupting a run mid-answer does not fire
+ // Stop, so without it the session stays red until it expires.
  return '{\n  "hooks": {\n'+
-  [ev('UserPromptSubmit','working'),ev('Stop','waiting'),ev('SessionEnd','end')].join(',\n')+
+  [ev('UserPromptSubmit','working'),ev('Stop','waiting'),
+   ev('StopFailure','waiting'),ev('SessionEnd','end')].join(',\n')+
   '\n  }\n}';
 }
 function copyHooks(){
