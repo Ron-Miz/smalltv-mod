@@ -8,6 +8,12 @@
 #include <Arduino.h>
 #include "Settings.h"
 
+// Implemented in main.cpp. A mode about to replace everything on the screen
+// asks for a backlight dip so the repaint happens in the dark, and paints when
+// it is woken at the bottom of it. False means a dip is already in flight (the
+// mode is being serviced from inside one) — paint now instead.
+bool appRequestDip();
+
 class DisplayMode {
  public:
   virtual ~DisplayMode() {}

@@ -109,16 +109,53 @@ static size_t carouselPick(const Settings& s) {
 // transition this panel can afford, since the 115 KB a slide would need does
 // not exist on the part.
 //
-// Run from loop() rather than blocking, so the web UI stays answerable through
-// the dip: each tick advances the ramp by elapsed time, and the swap happens at
-// the bottom, where nothing is visible.
+// One owner. The first cut let a feature run its own blocking dip as well, and
+// two owners of one backlight is how a panel ends up dark for a whole carousel
+// dwell: whoever ramps last wins, and if the wrong one wins there is nothing to
+// put the light back. A mode that is about to replace everything on screen now
+// asks for the dip instead (appRequestDip) and paints at the bottom of it, and
+// two invariants below make a stranded backlight impossible — outside a dip the
+// light is forced to full every tick, and a dip that somehow overruns is ended.
+//
+// Runs from loop() rather than blocking, so the web UI stays answerable through
+// the dip and nothing stalls the fetches.
 #define TRANS_OUT_MS 130
 #define TRANS_IN_MS  220
+#define TRANS_MAX_MS 3000    // a dip may never outlast this, whatever happens
 
 enum { TR_IDLE = 0, TR_OUT = 1, TR_IN = 2 };
 static uint8_t  g_trPhase  = TR_IDLE;
 static uint32_t g_trStart  = 0;
-static size_t   g_trTarget = 0;
+static uint8_t  g_trFrom   = 100;    // level the dip started from
+static size_t   g_trTarget = 0;      // carousel slot to land on
+static bool     g_trSwitch = false;  // switching modes, or repainting this one
+
+// Which mode the settings point at right now — no side effects, so it is safe
+// to call from inside the transition.
+static DisplayMode* resolveMode(const Settings& s) {
+  if (s.mode == MODE_CAROUSEL && kModeCount > 0) return kModes[g_carIdx];
+  for (size_t i = 0; i < kModeCount; i++)
+    if (kModes[i]->modeConst() == s.mode) return kModes[i];
+  return kModeCount ? kModes[0] : nullptr;   // fall back to the first compiled mode
+}
+
+static void transitionBegin(bool modeSwitch, size_t target) {
+  g_trSwitch = modeSwitch;
+  g_trTarget = target;
+  g_trFrom   = gfxFadeLevel();
+  g_trPhase  = TR_OUT;
+  g_trStart  = millis();
+}
+
+// Asked for by a mode that is about to replace the whole screen (the usage
+// meter swapping its bars for the idle face, say), so that repaint gets the
+// same dip a carousel switch gets. False means a dip is already in flight —
+// the caller is being serviced from inside one and should just paint.
+bool appRequestDip() {
+  if (g_trPhase != TR_IDLE) return false;
+  transitionBegin(false, g_carIdx);
+  return true;
+}
 
 static DisplayMode* activeMode(const Settings& s) {
   if (s.mode == MODE_CAROUSEL && kModeCount > 0) {
@@ -131,38 +168,47 @@ static DisplayMode* activeMode(const Settings& s) {
         g_carSwitch = millis();
         want = carouselPick(s);
       }
-      if (want != g_carIdx) {
-        g_trTarget = want;
-        g_trPhase  = TR_OUT;
-        g_trStart  = millis();
-      }
+      if (want != g_carIdx) transitionBegin(true, want);
     }
-    return kModes[g_carIdx];
   }
-  for (size_t i = 0; i < kModeCount; i++)
-    if (kModes[i]->modeConst() == s.mode) return kModes[i];
-  return kModeCount ? kModes[0] : nullptr;   // fall back to the first compiled mode
+  return resolveMode(s);
 }
 
-// Advance a switch in flight. Returns true while the caller should skip the
-// normal service() — during the dip the outgoing screen is frozen, and at the
-// bottom the incoming mode paints itself once, unseen.
+// Advance a dip in flight. Returns true while the caller should skip the normal
+// service() — the outgoing screen is frozen, and at the bottom the incoming
+// mode paints itself once, unseen.
 static bool transitionService(const Settings& s) {
-  if (g_trPhase == TR_IDLE) return false;
+  if (g_trPhase == TR_IDLE) {
+    // The fade belongs to a dip. With none in flight the panel is at full,
+    // whatever happened on the way here.
+    if (gfxFadeLevel() != 100) gfxSetFade(100);
+    return false;
+  }
+
   const uint32_t el = millis() - g_trStart;
+  if (el > TRANS_MAX_MS) {          // nothing may hold the glass dark
+    gfxSetFade(100);
+    g_trPhase = TR_IDLE;
+    return false;
+  }
 
   if (g_trPhase == TR_OUT) {
     if (el < TRANS_OUT_MS) {
-      gfxSetFade((uint8_t)(100 - 100UL * el / TRANS_OUT_MS));
+      gfxSetFade((uint8_t)(g_trFrom - (uint32_t)g_trFrom * el / TRANS_OUT_MS));
       return true;
     }
     gfxSetFade(0);
-    g_carIdx = g_trTarget;
-    kModes[g_carIdx]->wake(s);
-    kModes[g_carIdx]->service(s);    // the repaint nobody sees
-    g_carSwitch = millis();          // the new feature gets its full dwell
-    g_trPhase   = TR_IN;
-    g_trStart   = millis();
+    if (g_trSwitch) {
+      g_carIdx    = g_trTarget;
+      g_carSwitch = millis();       // the new feature gets its full dwell
+    }
+    DisplayMode* in = resolveMode(s);
+    if (in) {
+      in->wake(s);
+      in->service(s);               // the repaint nobody sees
+    }
+    g_trPhase = TR_IN;
+    g_trStart = millis();
     return true;
   }
 
@@ -214,6 +260,15 @@ void appApplyBrightness() {
 
 // Exposed to the web portal (/api/status) so the last reset reason is visible.
 const char* appResetReason() { return g_resetReason.c_str(); }
+
+// Also for /api/status: what is actually on the glass, and how lit it is. A
+// screen that looks blank is either a mode that painted nothing or a backlight
+// that never came back, and these two tell those apart without guesswork.
+const char* appScreenId() {
+  DisplayMode* m = resolveMode(g_settings);
+  return m ? m->id() : "-";
+}
+uint8_t appScreenFade() { return gfxFadeLevel(); }
 
 // Called by the web portal after settings are applied: re-init every mode and
 // force a fresh repaint so a mode/URL/symbol change takes effect immediately.

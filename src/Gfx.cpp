@@ -138,23 +138,6 @@ void gfxSetFade(uint8_t pct) {
 
 uint8_t gfxFadeLevel() { return g_fadePct; }
 
-// Blocking ramp, for the one caller that swaps the whole screen inside a single
-// service() call and has nowhere to keep a state machine. Steps every 8 ms and
-// yields on each, so the WiFi stack keeps its slice.
-void gfxFadeTo(uint8_t pct, uint16_t ms) {
-  if (pct > 100) pct = 100;
-  const int16_t from = (int16_t)g_fadePct, to = (int16_t)pct;
-  if (from == to) return;
-  const uint16_t step = 8;
-  uint16_t n = ms / step;
-  if (n < 1) n = 1;
-  for (uint16_t i = 1; i <= n; i++) {
-    gfxSetFade((uint8_t)(from + (int32_t)(to - from) * i / n));
-    delay(step);
-  }
-  gfxSetFade((uint8_t)to);
-}
-
 void gfxSetRotation(uint8_t r) {
   if (gfx) gfx->setRotation(r & 3);
 }

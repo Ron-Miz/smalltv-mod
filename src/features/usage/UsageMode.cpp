@@ -137,23 +137,13 @@ static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
 static uint16_t s_nBarsFull = 0;   // stats layout cleared and redrawn
 static uint16_t s_nFaceFull = 0;   // idle face cleared and redrawn
 static uint16_t s_nFlips    = 0;   // switches between the two screens
+// Which of the two screens is on the glass: -1 unknown, 0 bars, 1 face. Counted
+// here rather than from showingFace_, which wake() resets on every carousel
+// entry and which therefore cannot tell a flip from an arrival.
+static int8_t   s_shownFace = -1;
 uint16_t usageBarsFullCount() { return s_nBarsFull; }
 uint16_t usageFaceFullCount() { return s_nFaceFull; }
 uint16_t usageFlipCount()     { return s_nFlips; }
-
-// A whole-screen change inside this mode — bars giving way to the idle face, or
-// back — clears the glass exactly the way a carousel switch does, so it gets the
-// same treatment: dip the backlight, repaint in the dark, bring it back. Skipped
-// when the light is already down, because main.cpp is then mid-transition and
-// owns the ramp; lighting up here would undo its fade.
-static bool dipBegin() {
-  if (gfxFadeLevel() != 100) return false;
-  gfxFadeTo(0, 120);
-  return true;
-}
-static void dipEnd(bool dipped) {
-  if (dipped) gfxFadeTo(100, 200);
-}
 
 // Last-drawn state of the accent flag, so a routine update can toggle just the
 // dot instead of a full-screen clear.
@@ -164,6 +154,8 @@ static bool s_flagShown = false;
 static void drawUsage(const UsageData& u, bool fullRepaint) {
   Arduino_GFX* gfx = gfxDev();
   if (!gfx) return;
+  if (s_shownFace == 1) s_nFlips++;
+  s_shownFace = 0;
 
   if (fullRepaint) {
     s_nBarsFull++;
@@ -204,6 +196,8 @@ static void drawFace(bool restart) {
   Arduino_GFX* gfx = gfxDev();
   if (!gfx) return;
   GfxFaceCanvas fc(gfx);
+  if (s_shownFace == 0) s_nFlips++;
+  s_shownFace = 1;
   const bool full = restart || !s_facePrimed;
   if (full) s_nFaceFull++;
   faceSetViewport(0, 0, 100);        // back to the whole panel
@@ -276,10 +270,19 @@ void UsageMode::service(const Settings& s) {
   // a nap, and the other direction stays immediate: fresh numbers still appear
   // on the very next poll.
   uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 6UL + USAGE_STALE_GRACE_MS;
+  const bool wantFace = !usageFresh(staleMs);
 
-  if (usageFresh(staleMs)) {
+  // Swapping bars for the face, or back, replaces everything on the screen —
+  // the same visible clear a carousel switch makes, so it asks for the same
+  // dip and paints nothing now: main.cpp wakes this mode at the bottom of the
+  // dip and the repaint happens in the dark. A refused request means we are
+  // already inside one, and then the paint below is exactly what it is waiting
+  // for.
+  if (wantFace != showingFace_ && appRequestDip()) return;
+
+  if (!wantFace) {
     bool fullRepaint = !layoutPrimed_;
-    if (showingFace_) { showingFace_ = false; needRender_ = true; fullRepaint = true; s_nFlips++; }
+    if (showingFace_) { showingFace_ = false; needRender_ = true; fullRepaint = true; }
     if (u.lastOkMs != usageRenderedOk_) {
       usageRenderedOk_ = u.lastOkMs;
       if (contentChanged(u)) {
@@ -289,21 +292,16 @@ void UsageMode::service(const Settings& s) {
       }
     }
     if (needRender_) {
-      const bool dipped = fullRepaint ? dipBegin() : false;
       drawUsage(u, fullRepaint);
-      dipEnd(dipped);
       layoutPrimed_ = true;
       needRender_ = false;
     }
   } else {
     if (!showingFace_) {
       showingFace_ = true;
-      s_nFlips++;
       usageRenderedOk_ = 0xFFFFFFFF;
-      const bool dipped = dipBegin();
       faceReset(millis(), micros());
       drawFace(/*restart=*/true);
-      dipEnd(dipped);
     } else {
       faceSetPace(1, /*calm=*/false);   // the idle screen is the face's own
       if (faceTick(millis())) drawFace(/*restart=*/false);

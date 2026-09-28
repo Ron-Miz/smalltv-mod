@@ -38,8 +38,11 @@ void         gfxSetRotation(uint8_t r);
 // the backlight instead of in pixels: dip the light, repaint in the dark, bring
 // it back. gfxSetFade is a 0..100 multiplier on top of the configured
 // brightness, so night mode and auto-brightness keep working through it.
-void         gfxSetFade(uint8_t pct);            // instant; the caller ramps
-void         gfxFadeTo(uint8_t pct, uint16_t ms);// blocking ramp, for rare swaps
+//
+// Deliberately only a setter: main.cpp owns the ramp and is the single writer.
+// A second place that ramps the backlight is how the panel ended up dark for a
+// whole carousel dwell.
+void         gfxSetFade(uint8_t pct);
 uint8_t      gfxFadeLevel();
 // Push the Display tab's colour settings to the panel: MADCTL colour order,
 // the inversion bit, and the per-channel gain gfxTint() applies. Callers repaint

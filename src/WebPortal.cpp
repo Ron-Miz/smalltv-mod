@@ -34,6 +34,8 @@
 // Defined in main.cpp — re-init every mode + force a repaint after a config change.
 extern void appInvalidate();
 extern const char* appResetReason();   // last reset reason (diagnostics)
+extern const char* appScreenId();      // id of the mode currently on the panel
+extern uint8_t     appScreenFade();    // 0..100 backlight fade, 100 outside a transition
 extern void appApplyBrightness();   // main.cpp: re-resolve effective brightness now
 
 static WebServerClass server(80);
@@ -129,6 +131,11 @@ static void handleStatus() {
   o["contstk"] = platformFreeContStack();   // primary stack headroom (ESP8266)
   o["uptime"] = millis() / 1000;
   o["reset"] = appResetReason();
+  // What is on the glass and how lit it is. A screen that looks blank is either
+  // a feature that painted nothing or a backlight that never came back from a
+  // transition, and these two tell those apart from here.
+  o["screen"] = appScreenId();
+  o["fade"]   = appScreenFade();
 #if WITH_USAGE
   // How long since usage data last arrived, so "why are there no bars" has an
   // answer from the API instead of from watching the screen. -1 = never yet.
