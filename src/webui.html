@@ -4,51 +4,150 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SmallTV</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMjJjNTVlIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iNyIgeT0iMTMiIHdpZHRoPSI1MCIgaGVpZ2h0PSIzOCIgcng9IjYiLz48cG9seWxpbmUgcG9pbnRzPSIxNSwzOCAyMywzMCAzMCwzNCAzNywyMiA0NCwyOCA1MCwyMCIvPjxwYXRoIGQ9Ik0yNCA1MXY2TTQwIDUxdjZNMjAgNTdoOE0zNiA1N2g4Ii8+PC9nPjwvc3ZnPg==">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZDk3NzU3IiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHJlY3QgeD0iNyIgeT0iMTMiIHdpZHRoPSI1MCIgaGVpZ2h0PSIzOCIgcng9IjYiLz48cG9seWxpbmUgcG9pbnRzPSIxNSwzOCAyMywzMCAzMCwzNCAzNywyMiA0NCwyOCA1MCwyMCIvPjxwYXRoIGQ9Ik0yNCA1MXY2TTQwIDUxdjZNMjAgNTdoOE0zNiA1N2g4Ii8+PC9nPjwvc3ZnPg==">
 <style>
-:root{--bg:#0e1116;--card:#171c24;--mut:#8b96a5;--fg:#e6edf3;--acc:#3fb950;--acc2:#2f81f7;--red:#f85149;--bd:#262d38}
+/* SmallTV control surface.
+   A committed dark instrument panel rather than a themed page: the device is
+   read at a glance on a desk, so contrast and numeric legibility win over
+   matching the browser's light mode. Every colour is painted explicitly.
+   Clay is the accent because it is the colour the panel itself draws. */
+:root{
+ --bg:#0a0d12;        /* ground */
+ --surf:#121820;      /* raised card */
+ --inset:#070a0e;     /* sunken field */
+ --bd:#1d2530;        /* hairline */
+ --bd2:#2b3542;       /* hairline, emphasised */
+ --fg:#e2e8f0;
+ --mut:#7b8a9d;
+ --acc:#d97757;       /* clay — primary action, live state */
+ --acc-ink:#1a0a05;   /* text on clay */
+ --acc2:#5ecfd6;      /* cool secondary — data, progress */
+ --red:#e8635a;
+ --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+ --r:10px;
+}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg);font-size:15px}
-header{padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px}
-header h1{font-size:17px;margin:0;font-weight:600}
-header .logo{width:26px;height:26px;flex:0 0 auto}
-header .dot{width:9px;height:9px;border-radius:50%;background:var(--mut)}
-header .dot.ok{background:var(--acc)}
-nav{display:flex;gap:4px;padding:8px;overflow-x:auto;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--bg);z-index:5}
-nav button{background:none;border:0;color:var(--mut);padding:8px 12px;border-radius:8px;font-size:14px;cursor:pointer;white-space:nowrap}
-nav button.active{background:var(--card);color:var(--fg)}
-main{padding:16px;max-width:680px;margin:0 auto}
+body{margin:0;background:var(--bg);color:var(--fg);font-size:15px;line-height:1.45;
+ font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+ -webkit-font-smoothing:antialiased}
+
+/* ---- header: device identity + live link state ---- */
+header{display:flex;align-items:center;gap:11px;padding:14px 18px;
+ background:linear-gradient(180deg,#0e131a,#0a0d12);border-bottom:1px solid var(--bd)}
+header .logo{width:25px;height:25px;flex:0 0 auto}
+header h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.01em}
+header .dot{width:8px;height:8px;border-radius:50%;background:#3b4654;flex:0 0 auto;
+ box-shadow:0 0 0 3px rgba(255,255,255,.03)}
+header .dot.ok{background:var(--acc2);box-shadow:0 0 0 3px rgba(94,207,214,.14)}
+header .muted{margin-left:auto;font-family:var(--mono);font-size:12px;
+ font-variant-numeric:tabular-nums;text-align:right}
+
+/* ---- nav: a segmented rail, not a row of buttons ---- */
+nav{display:flex;gap:2px;padding:8px 10px;overflow-x:auto;position:sticky;top:0;z-index:5;
+ background:rgba(10,13,18,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd);
+ scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:0;color:var(--mut);cursor:pointer;white-space:nowrap;
+ padding:7px 13px;border-radius:8px;font:inherit;font-size:13.5px;font-weight:500;
+ transition:color .12s,background .12s}
+nav button:hover{color:var(--fg);background:rgba(255,255,255,.035)}
+nav button.active{color:var(--fg);background:var(--surf);box-shadow:inset 0 0 0 1px var(--bd2)}
+
+main{padding:18px 16px 40px;max-width:700px;margin:0 auto}
 .tab{display:none}.tab.active{display:block}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
-h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 12px}
-label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mut)}
-input[type=text],input[type=password],input[type=number],input[type=url],select{
- width:100%;padding:9px 10px;background:#0b0e13;border:1px solid var(--bd);border-radius:8px;color:var(--fg);font-size:15px}
-input[type=range]{width:100%}
-.row{display:flex;gap:10px}.row>*{flex:1}
-.chk{display:flex;align-items:center;gap:8px;margin:8px 0}
-.chk input{width:18px;height:18px}
-.chk label{margin:0;color:var(--fg);font-size:14px}
-.req{border:1px solid var(--bd);background:#0b0e13;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px;line-height:1.5;color:var(--mut)}
+
+/* ---- cards: hairline-separated surfaces; the heading is the divider ---- */
+.card{background:var(--surf);border:1px solid var(--bd);border-radius:14px;
+ padding:16px 18px 18px;margin-bottom:14px}
+h2{margin:-2px -18px 14px;padding:0 18px 12px;border-bottom:1px solid var(--bd);
+ font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--mut)}
+
+label{display:block;margin:12px 0 5px;font-size:12px;font-weight:500;color:var(--mut);
+ letter-spacing:.02em}
+input[type=text],input[type=password],input[type=number],input[type=url],
+input[type=time],input:not([type]),select{
+ width:100%;padding:9px 11px;background:var(--inset);color:var(--fg);font:inherit;font-size:14px;
+ border:1px solid var(--bd);border-radius:var(--r);transition:border-color .12s,box-shadow .12s}
+input[type=number],input[type=time]{font-family:var(--mono);font-variant-numeric:tabular-nums}
+input[type=time]{width:auto;min-width:120px}
+input[type=time]::-webkit-calendar-picker-indicator{filter:invert(.62) sepia(.1);cursor:pointer}
+input[type=file]{width:100%;font:inherit;font-size:13px;color:var(--mut)}
+input[type=file]::file-selector-button{background:#1e2733;color:var(--fg);font:inherit;
+ font-size:13px;font-weight:600;border:0;box-shadow:inset 0 0 0 1px var(--bd2);
+ padding:8px 14px;border-radius:var(--r);margin-right:11px;cursor:pointer}
+input[type=file]::file-selector-button:hover{background:#26313f}
+input:focus,select:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px rgba(217,119,87,.18)}
+select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),
+ linear-gradient(135deg,var(--mut) 50%,transparent 50%);
+ background-position:calc(100% - 17px) 50%,calc(100% - 12px) 50%;
+ background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:32px}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1 1 140px;min-width:0}
+
+.chk{display:flex;align-items:center;gap:9px;margin:9px 0}
+.chk input{width:17px;height:17px;flex:0 0 auto;accent-color:var(--acc)}
+.chk label{margin:0;color:var(--fg);font-size:14px;font-weight:400;letter-spacing:0}
+
+.req{border:1px solid var(--bd);background:var(--inset);border-radius:var(--r);
+ padding:11px 13px;margin:0 0 14px;font-size:13px;line-height:1.55;color:var(--mut)}
 .req b{color:var(--fg);font-weight:600}
-button.btn{background:var(--acc);color:#04130a;border:0;padding:10px 16px;border-radius:9px;font-size:15px;font-weight:600;cursor:pointer}
-button.btn.sec{background:#222b36;color:var(--fg)}
-button.btn.danger{background:var(--red);color:#1a0606}
-button.btn:disabled{opacity:.5}
+.req code{font-family:var(--mono);font-size:12px;color:var(--acc2);
+ background:rgba(94,207,214,.09);padding:1px 5px;border-radius:5px}
+
+button.btn{background:var(--acc);color:var(--acc-ink);border:0;cursor:pointer;
+ padding:10px 17px;border-radius:var(--r);font:inherit;font-size:14px;font-weight:600;
+ transition:filter .12s}
+button.btn:hover{filter:brightness(1.08)}
+button.btn.sec{background:#1e2733;color:var(--fg);box-shadow:inset 0 0 0 1px var(--bd2)}
+button.btn.danger{background:transparent;color:var(--red);box-shadow:inset 0 0 0 1px rgba(232,99,90,.45)}
+button.btn.danger:hover{background:rgba(232,99,90,.1);filter:none}
+button.btn:disabled{opacity:.45;cursor:default;filter:none}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+
+a{color:var(--acc2);text-decoration:none;border-bottom:1px solid rgba(94,207,214,.28)}
+a:visited{color:var(--acc2)}
+a:hover{border-bottom-color:var(--acc2)}
 .muted{color:var(--mut);font-size:13px}
 table{width:100%;border-collapse:collapse}
 td{padding:6px 4px}
 .symrow input{margin:0}
-.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd)}
-.kv:last-child{border:0}.kv b{font-weight:600}
-.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0b0e13;border:1px solid var(--bd);padding:10px 16px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none}
-.toast.show{opacity:1}
-.net{padding:8px;border:1px solid var(--bd);border-radius:8px;margin:4px 0;cursor:pointer;display:flex;justify-content:space-between}
-.net:hover{border-color:var(--acc2)}
-.bar{height:8px;background:#0b0e13;border-radius:6px;overflow:hidden;margin-top:8px}
-.bar>div{height:100%;width:0;background:var(--acc2);transition:.2s}
-small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
-.chip{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;letter-spacing:.03em;background:var(--acc2);color:#fff;vertical-align:middle}
+
+/* ---- key/value readouts: values are data, so they are set in mono ---- */
+.kv{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+ padding:8px 0;border-bottom:1px solid var(--bd);font-size:13.5px}
+.kv:last-child{border:0;padding-bottom:0}
+.kv span:first-child{color:var(--mut)}
+.kv b{font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums;
+ text-align:right;word-break:break-all}
+
+.toast{position:fixed;left:50%;bottom:20px;transform:translate(-50%,8px);
+ background:#161d26;color:var(--fg);border:1px solid var(--bd2);border-radius:var(--r);
+ padding:11px 18px;font-size:14px;box-shadow:0 10px 30px rgba(0,0,0,.5);
+ opacity:0;transition:opacity .22s,transform .22s;pointer-events:none;z-index:20}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+.net{display:flex;justify-content:space-between;gap:12px;align-items:center;
+ padding:10px 12px;margin:5px 0;background:var(--inset);border:1px solid var(--bd);
+ border-radius:var(--r);cursor:pointer;font-size:14px;transition:border-color .12s}
+.net:hover{border-color:var(--acc)}
+.net span:last-child{font-family:var(--mono);font-size:12px;color:var(--mut)}
+
+.bar{height:6px;background:var(--inset);border-radius:99px;overflow:hidden;margin-top:10px;
+ box-shadow:inset 0 0 0 1px var(--bd)}
+.bar>div{height:100%;width:0;background:var(--acc2);border-radius:99px;transition:width .25s}
+
+small.hint{display:block;color:var(--mut);margin-top:5px;font-size:12px;line-height:1.5}
+.chip{display:inline-block;margin-left:9px;padding:2px 8px;border-radius:99px;
+ font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;
+ text-transform:uppercase;color:var(--acc);background:rgba(217,119,87,.13);
+ box-shadow:inset 0 0 0 1px rgba(217,119,87,.3);vertical-align:middle}
+
+@media(max-width:430px){
+ main{padding:14px 12px 32px}
+ .card{padding:14px 14px 16px;border-radius:12px}
+ h2{margin:-2px -14px 12px;padding:0 14px 11px}
+ header{padding:12px 14px}
+}
 </style></head>
 <body>
 <header><svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="var(--acc)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="13" width="50" height="38" rx="6"/><polyline points="15,38 23,30 30,34 37,22 44,28 50,20"/><path d="M24 51v6M40 51v6M20 57h8M36 57h8"/></g></svg><span id="dot" class="dot"></span><h1>SmallTV</h1><span id="chip" class="chip" style="display:none"></span><span id="hi" class="muted"></span></header>
@@ -179,8 +278,8 @@ small.hint{display:block;color:var(--mut);margin-top:4px;font-size:12px}
    <label>Night brightness: <span id="nlVal"></span>% <span class="muted">(0 = screen off)</span></label>
    <input id="nightLevel" type="range" min="0" max="100" oninput="nlVal.textContent=this.value">
    <div class="row">
-    <div><label>Time server</label><input id="ntp1" placeholder="pool.ntp.org"></div>
-    <div><label>Backup time server</label><input id="ntp2" placeholder="time.nist.gov"></div>
+    <div><label>Time server</label><input id="ntp1" type="text" placeholder="pool.ntp.org"></div>
+    <div><label>Backup time server</label><input id="ntp2" type="text" placeholder="time.nist.gov"></div>
    </div>
    <small class="hint">Leave the time servers blank to use the public pool. Change them if this network cannot reach it &mdash; an IoT VLAN with filtered egress, or a LAN that runs its own time source. An IP works as well as a name. Saving re-queries immediately.</small>
    <small class="hint">Needs internet once to set the clock over NTP. The timezone also applies to theme clocks. While the window is active it overrides the brightness and auto-brightness above. Times are local to the selected timezone; DST is handled automatically. After a reboot the schedule resumes once the clock re-syncs, so the screen may show normal brightness for a few seconds.</small>

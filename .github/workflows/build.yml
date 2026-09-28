@@ -86,7 +86,7 @@ jobs:
         run: pip install platformio==6.1.19
 
       - name: Build firmware (all targets)
-        run: pio run -e smalltv -e smalltv_nothemes -e smalltv_lean -e smalltv_c2 -e smalltv_esp32 -e smalltv_esp32_wg -e smalltv_esp32_8mb -e smalltv_loader
+        run: pio run -e smalltv -e smalltv_nothemes -e smalltv_ron -e smalltv_lean -e smalltv_c2 -e smalltv_esp32 -e smalltv_esp32_wg -e smalltv_esp32_8mb -e smalltv_loader
 
       - name: Test theme engine and packer
         run: |
@@ -129,6 +129,7 @@ jobs:
           copy() { [ -f "$1" ] && cp "$1" "$2" || echo "missing: $1"; }
           copy .pio/build/smalltv/firmware.bin dist/smalltv-mod-firmware.bin
           copy .pio/build/smalltv_nothemes/firmware.bin dist/smalltv-mod-firmware-nothemes.bin
+          copy .pio/build/smalltv_ron/firmware.bin dist/smalltv-mod-firmware-ron.bin
           copy .pio/build/smalltv_lean/firmware.bin dist/smalltv-mod-firmware-lean.bin
           copy .pio/build/smalltv_c2/firmware.bin dist/smalltv-mod-firmware-c2.bin
           copy .pio/build/smalltv_c2/firmware.factory.bin dist/smalltv-mod-firmware-c2.factory.bin
