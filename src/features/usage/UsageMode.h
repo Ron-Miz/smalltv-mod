@@ -52,6 +52,12 @@ class UsageMode : public DisplayMode {
 
 extern UsageMode g_usageMode;
 
+// True when the meter actually has numbers to show. The idle face is a
+// screensaver, not a feature, and a rotation that stops on a screensaver — or
+// on "waiting..." — is dead air in the same way a stop on an empty session list
+// is. The carousel asks this before giving the usage screen a slot.
+bool usageHasNumbers(const Settings& s);
+
 // Whole-screen repaint counters, reported by /api/status. Everything else on
 // this screen is painted by difference, so these are the only events that can
 // look like a flash — which makes an intermittent flicker measurable rather

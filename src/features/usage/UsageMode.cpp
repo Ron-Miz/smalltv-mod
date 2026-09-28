@@ -229,6 +229,15 @@ void UsageMode::rememberContent(const UsageData& u) {
   strlcpy(lastStatus_, u.status, sizeof(lastStatus_));
 }
 
+// Worth a carousel stop only with fresh *and* parseable numbers on hand. Both
+// halves matter: stale data gives the idle face, and a reading that arrived but
+// did not parse gives a near-empty screen reading "waiting...", and neither is
+// something to rotate onto.
+bool usageHasNumbers(const Settings& s) {
+  const uint32_t staleMs = (uint32_t)s.usage.pollSec * 1000UL * 6UL + USAGE_STALE_GRACE_MS;
+  return usageFresh(staleMs) && usageGet().valid;
+}
+
 // ---- DisplayMode ----------------------------------------------------------
 void UsageMode::begin(const Settings& s) {
   usageInit(s);

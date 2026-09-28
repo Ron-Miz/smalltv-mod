@@ -78,7 +78,14 @@ static uint32_t g_carSwitch = 0;
 static bool carouselHas(const Settings& s, const DisplayMode* m) {
   switch (m->modeConst()) {
     case MODE_STOCKS: return s.carouselTicker;
+#if WITH_USAGE
+    // Ticked *and* holding numbers. With the daemon quiet the usage screen is
+    // the idle face, and a rotation that stops on a screensaver for fifteen
+    // seconds before moving on reads as a third tab that nobody asked for.
+    case MODE_USAGE:  return s.carouselUsage && usageHasNumbers(s);
+#else
     case MODE_USAGE:  return s.carouselUsage;
+#endif
 #if WITH_SESSIONS
     // Ticked *and* non-empty: a carousel stop on "no sessions" is dead air.
     case MODE_SESSIONS: return s.carouselSessions && sessionsCount() > 0;
@@ -92,13 +99,23 @@ static bool carouselHas(const Settings& s, const DisplayMode* m) {
   }
 }
 
-// The next ticked mode after the current one (stays put if none other is ticked).
+// Where to park when nothing ticked has anything to show: the feature that owns
+// the idle screen, rather than whichever empty one we happened to be on. An
+// idle face is a fair thing to look at; "no sessions" for an hour is not.
+static size_t carouselIdle() {
+  for (size_t i = 0; i < kModeCount; i++)
+    if (kModes[i]->modeConst() == MODE_USAGE) return i;
+  return 0;
+}
+
+// The next ticked mode after the current one, or the idle screen if nothing
+// else has anything to show.
 static size_t carouselPick(const Settings& s) {
   for (size_t hop = 1; hop <= kModeCount; hop++) {
     size_t cand = (g_carIdx + hop) % kModeCount;
     if (carouselHas(s, kModes[cand])) return cand;
   }
-  return g_carIdx;
+  return carouselIdle();
 }
 
 // ---- mode transition ------------------------------------------------------
