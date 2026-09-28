@@ -41,6 +41,7 @@
 #endif
 #if WITH_SESSIONS
 #include "features/sessions/SessionsMode.h"
+#include "features/sessions/Sessions.h"
 #endif
 
 // ---- mode registry --------------------------------------------------------
@@ -79,7 +80,8 @@ static bool carouselHas(const Settings& s, const DisplayMode* m) {
     case MODE_STOCKS: return s.carouselTicker;
     case MODE_USAGE:  return s.carouselUsage;
 #if WITH_SESSIONS
-    case MODE_SESSIONS: return s.carouselSessions;
+    // Ticked *and* non-empty: a carousel stop on "no sessions" is dead air.
+    case MODE_SESSIONS: return s.carouselSessions && sessionsCount() > 0;
 #endif
     case MODE_RADAR:  return s.carouselRadar;
 #if WITH_HA

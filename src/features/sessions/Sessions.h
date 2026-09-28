@@ -43,7 +43,11 @@ void sessionsClear();
 // Read-only view for the web UI. Rows with used=false are free slots.
 const SessionRow* sessionsAll();
 
-// Drop rows nothing has reported for SESSION_STALE_MS. Called from the web
-// handler rather than the main loop: the list only matters when it is read, so
-// there is no reason to spend loop time on it.
+// Drop rows nothing has reported for their state's lifetime (see config.h).
+// Called when the list is read rather than from the main loop: it only matters
+// at the point of being shown.
 void sessionsExpire();
+
+// How many sessions are live right now. The carousel asks before including this
+// screen: rotating onto an empty board is worse than not rotating onto it.
+uint8_t sessionsCount();

@@ -179,6 +179,15 @@ static const EyeGeom kShapes[4] = {
 // from settling into a rhythm.
 //                                 wig squ win hlf slo gla flu
 static const uint8_t kWeights[7] = { 3,  2,  2,  2,  3,  3,  2};
+
+// The calm table, for a face sharing a screen rather than owning one. Lengthening
+// the rest between routines was not enough on its own, because most routines are
+// bursts in themselves: wiggle ends on two blinks, halfBlink blinks twice and
+// flutter is two 110ms blinks back to back. Those three are what read as
+// "blinking a lot at once", so calm drops them and leans on the single slow
+// blink, leaving the glance and the occasional squint for variety.
+//                                 wig squ win hlf slo gla flu
+static const uint8_t kCalmWeights[7] = { 0,  2,  1,  0,  5,  3,  0};
 #define REST_MIN_MS  900
 #define REST_MAX_MS 3200
 
@@ -199,7 +208,11 @@ static uint16_t s_restHold = 0;
 // above the numbers reads as fidgeting, because the eye keeps being pulled
 // back to a thing that is not the point of that screen.
 static uint8_t s_restMult = 1;
-void faceSetPace(uint8_t restMult) { s_restMult = restMult ? restMult : 1; }
+static bool    s_calm     = false;
+void faceSetPace(uint8_t restMult, bool calm) {
+  s_restMult = restMult ? restMult : 1;
+  s_calm     = calm;
+}
 
 // Tween: the eyes travel from s_from to s_to over s_morphMs, then hold still
 // for s_holdMs. s_progress is the raw 0..255 position, eased at render time.
@@ -252,7 +265,7 @@ static uint8_t weightedPick(const uint8_t* w, int16_t exclude) {
 }
 
 static void pickRoutine() {
-  s_routine = weightedPick(kWeights, (int16_t)s_routine);
+  s_routine = weightedPick(s_calm ? kCalmWeights : kWeights, (int16_t)s_routine);
   s_mirror  = kRoutines[s_routine].mirrors ? (uint8_t)(rnd() & 1) : 0;
   s_pose    = 0;
 }

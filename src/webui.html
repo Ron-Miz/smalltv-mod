@@ -487,7 +487,8 @@ small.hint{display:block;color:var(--mut);margin-top:5px;font-size:12px;line-hei
   <div class="card"><h2>Active sessions</h2>
    <div class="req">Claude Code hooks on your computer post a line here whenever a
     session starts thinking or stops for your reply. <b>Red, blinking</b> means that
-    session is working; <b>green</b> means it is finished and waiting on you. Nothing
+    session is working; <b>green</b> means it is finished, was interrupted, or has
+    asked you something — in short, it wants you. Nothing
     appears until the hooks are installed — see the System tab.</div>
    <div id="sesList"><div class="empty">No sessions reported yet.</div></div>
    <div style="margin-top:14px;display:flex;gap:9px;flex-wrap:wrap">
@@ -635,9 +636,12 @@ function hookSnippet(){
  }
  // StopFailure as well as Stop: interrupting a run mid-answer does not fire
  // Stop, so without it the session stays red until it expires.
+ // Stop alone is not enough: an interrupted turn does not fire it, and a turn
+ // that stops to ask you something fires Notification instead.
  return '{\n  "hooks": {\n'+
   [ev('UserPromptSubmit','working'),ev('Stop','waiting'),
-   ev('StopFailure','waiting'),ev('SessionEnd','end')].join(',\n')+
+   ev('StopFailure','waiting'),ev('Notification','waiting'),
+   ev('SessionEnd','end')].join(',\n')+
   '\n  }\n}';
 }
 function copyHooks(){

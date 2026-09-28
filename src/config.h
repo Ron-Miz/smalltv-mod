@@ -245,10 +245,17 @@
 #define WITH_SESSIONS 1
 #endif
 
-// A session nothing has reported for this long is dropped from the list. Long
-// enough to survive a slow tool call or a coffee break, short enough that a
-// machine that slept with a session open does not leave a ghost behind.
-#define SESSION_STALE_MS  (45UL * 60UL * 1000UL)   // 45 min
+// How long a session survives with nothing reported, by what it was last doing.
+// One timeout for all three was wrong in the one case that matters most: a
+// session that has asked you a question generates no hook traffic at all while
+// it waits, so the row you most want to keep was the row most likely to be
+// swept. A waiting session is therefore kept for hours — it is idle by
+// definition, not missing — while a working one that has gone quiet for half an
+// hour has almost certainly died with its terminal and is worth dropping,
+// because a stale red dot is a lie about what your machine is doing.
+#define SESSION_STALE_WORKING_MS  (30UL * 60UL * 1000UL)   // 30 min
+#define SESSION_STALE_WAITING_MS  (12UL * 60UL * 60UL * 1000UL)  // 12 h
+#define SESSION_STALE_IDLE_MS     (45UL * 60UL * 1000UL)   // 45 min
 
 // Claude usage mode: once data stops arriving for this long (PC asleep, daemon
 // stopped, network down) the screen switches from the stats to the idle face

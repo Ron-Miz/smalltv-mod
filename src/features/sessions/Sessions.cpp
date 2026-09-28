@@ -50,12 +50,26 @@ void sessionsClear() { memset(s_rows, 0, sizeof(s_rows)); }
 
 const SessionRow* sessionsAll() { return s_rows; }
 
+static uint32_t lifetimeFor(uint8_t state) {
+  return state == SESSION_WORKING ? SESSION_STALE_WORKING_MS
+       : state == SESSION_WAITING ? SESSION_STALE_WAITING_MS
+                                  : SESSION_STALE_IDLE_MS;
+}
+
 void sessionsExpire() {
   const uint32_t now = millis();
   for (uint8_t i = 0; i < SESSION_MAX; i++) {
     if (!s_rows[i].used) continue;
-    if ((uint32_t)(now - s_rows[i].seenMs) >= SESSION_STALE_MS) memset(&s_rows[i], 0, sizeof(s_rows[i]));
+    if ((uint32_t)(now - s_rows[i].seenMs) >= lifetimeFor(s_rows[i].state))
+      memset(&s_rows[i], 0, sizeof(s_rows[i]));
   }
+}
+
+uint8_t sessionsCount() {
+  sessionsExpire();
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < SESSION_MAX; i++) if (s_rows[i].used) n++;
+  return n;
 }
 
 #endif  // WITH_SESSIONS

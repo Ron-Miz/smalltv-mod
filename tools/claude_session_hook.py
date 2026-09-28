@@ -32,6 +32,28 @@ TIMEOUT_S = 1.5
 DEFAULT_DEVICE = os.environ.get("SMALLTV_HOST", "")
 
 
+LOG_PATH = os.path.expanduser("~/.claude/smalltv-hook.log")
+LOG_MAX = 64 * 1024
+
+
+def _log(state: str, session_id: str, label: str) -> None:
+    """Record what actually fired.
+
+    Which events a given Claude Code build raises for an interrupted turn is not
+    something to guess at twice: this makes it observable. Capped and best
+    effort, and never allowed to affect the hook's exit status.
+    """
+    try:
+        if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > LOG_MAX:
+            os.replace(LOG_PATH, LOG_PATH + ".1")
+        with open(LOG_PATH, "a") as fh:
+            fh.write("%s %-8s %s %s\n" % (
+                __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                state, session_id, label))
+    except Exception:
+        pass
+
+
 def main() -> int:
     state = sys.argv[1] if len(sys.argv) > 1 else "working"
 
@@ -56,6 +78,8 @@ def main() -> int:
 
     cwd = payload.get("cwd") or os.getcwd()
     label = os.path.basename(os.path.normpath(cwd))[:23]
+
+    _log(state, session_id, label)
 
     body = json.dumps({"id": session_id, "label": label, "state": state}).encode()
     url = "http://%s/api/session" % device

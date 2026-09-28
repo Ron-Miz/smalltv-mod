@@ -4,6 +4,7 @@
 #include <Arduino_GFX_Library.h>
 #include "Gfx.h"
 #include "Sessions.h"
+#include "../usage/ClaudeFace.h"
 
 SessionsMode g_sessionsMode;
 
@@ -13,11 +14,42 @@ SessionsMode g_sessionsMode;
 #define S_WORK    gfxTint(0xF9A6)   // red   — thinking or answering
 #define S_WAIT    gfxTint(0x2E6C)   // green — finished, waiting on you
 
-#define ROW_TOP    44
-#define ROW_H      30
+#define ROW_TOP    50
+#define ROW_H      31
 #define DOT_X      22
 #define DOT_R       7
 #define BLINK_MS  520
+
+// Header, laid out like the usage screen's so the two read as one device: a
+// size-2 title with the live face beside it, the pair centred as a group.
+#define HDR_TITLE_X   40
+#define HDR_TITLE_Y   17
+#define FACE_PCT      32
+#define FACE_X       143
+#define FACE_Y         0
+#define FACE_REST_MULT 6
+
+// The face is drawn through the same renderer as the usage screen; only one
+// mode is on the glass at a time, so they share its state and each repaints it
+// fully on entry.
+class GfxFace : public FaceCanvas {
+ public:
+  explicit GfxFace(Arduino_GFX* g) : g_(g) {}
+  void begin() override { g_->startWrite(); }
+  void end() override   { g_->endWrite(); }
+  void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c) override {
+    g_->writeFillRect(x, y, w, h, c);
+  }
+ private:
+  Arduino_GFX* g_;
+};
+
+static void drawFace(Arduino_GFX* gfx, bool full) {
+  GfxFace fc(gfx);
+  faceSetViewport(FACE_X, FACE_Y, FACE_PCT);
+  faceSetPace(FACE_REST_MULT, /*calm=*/true);
+  faceRender(fc, C_BLACK, S_ACCENT, full);
+}
 
 // Ids and states folded together. Only a change here is worth a repaint: the
 // ages tick every second and redrawing for those would make the panel busy for
@@ -47,9 +79,10 @@ void SessionsMode::repaint() {
 
   gfx->fillScreen(C_BLACK);
   gfx->setTextSize(2);
-  gfx->setTextColor(S_ACCENT);
-  gfx->setCursor(10, 12);
+  gfx->setTextColor(S_DIM);
+  gfx->setCursor(HDR_TITLE_X, HDR_TITLE_Y);
   gfx->print("SESSIONS");
+  drawFace(gfx, /*full=*/true);
 
   uint8_t n = 0;
   for (uint8_t i = 0; i < SESSION_MAX; i++) if (rows[i].used) n++;
@@ -72,15 +105,16 @@ void SessionsMode::repaint() {
       gfx->fillCircle(DOT_X, y + 11, DOT_R, stateColor(rows[i].state));
 
       const char* name = rows[i].label[0] ? rows[i].label : rows[i].id;
-      gfx->setTextSize(gfxFitSize(name, 150, 2));
+      gfx->setTextSize(gfxFitSize(name, 120, 2));
       gfx->setTextColor(C_WHITE);
       gfx->setCursor(40, y + 5);
       gfx->print(name);
 
-      const char* word = want == SESSION_WORKING ? ".." : want == SESSION_WAITING ? "ok" : "--";
-      gfx->setTextSize(1);
+      const char* word = want == SESSION_WORKING ? "run"
+                       : want == SESSION_WAITING ? "you" : "idle";
+      gfx->setTextSize(2);
       gfx->setTextColor(stateColor(want));
-      gfx->setCursor(228 - gfxTextW(word, 1), y + 9);
+      gfx->setCursor(230 - gfxTextW(word, 2), y + 6);
       gfx->print(word);
       slot++;
     }
@@ -126,6 +160,14 @@ void SessionsMode::service(const Settings& s) {
     blinkOn_ = true;
     lastBlinkMs_ = millis();
     return;
+  }
+
+  // The face runs here too, at the header's calm pace. Set the pace before the
+  // tick that picks the next rest, so the first rest on this screen is already
+  // the long one.
+  faceSetPace(FACE_REST_MULT, /*calm=*/true);
+  if (faceTick(millis())) {
+    if (Arduino_GFX* gfx = gfxDev()) drawFace(gfx, /*full=*/false);
   }
 
   const uint32_t now = millis();

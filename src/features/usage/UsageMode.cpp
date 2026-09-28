@@ -11,6 +11,7 @@ UsageMode g_usageMode;
 // correction reaches these too.
 #define C_ACCENT  gfxTint(0xDBAA)   // terra-cotta 0xd97757
 #define C_UGREEN  gfxTint(0x7C6B)   // green 0x788c5d
+#define C_UAMBER  gfxTint(0xFE60)   // amber 0xffcc00, the middle band
 #define C_PANEL   gfxTint(0x18E3)   // card fill 0x1f1f1e
 #define C_BARBG   gfxTint(0x2945)   // unfilled bar track 0x2a2a28
 #define C_DIM     gfxTint(0xB574)   // secondary text 0xb0aea5
@@ -53,54 +54,72 @@ static void fmtReset(int mins, char* out, size_t n) {
   else            snprintf(out, n, "%dm", m);
 }
 
+// The bar answers one question at a glance: how much room is left. Green while
+// there is plenty, amber once most of the window is spent, red approaching the
+// limit — 60 and 85 rather than 75 and 90, because the useful warning is the
+// one that arrives while you can still change what you are doing.
 static uint16_t barColor(float pct) {
-  if (pct >= 90) return C_RED;
-  if (pct >= 75) return C_ACCENT;
+  if (pct >= 85) return C_RED;
+  if (pct >= 60) return C_UAMBER;
   return C_UGREEN;
 }
 
 // One usage card: big %, a 5h/7d label, a fill bar coloured by load, and the
 // reset countdown. `top` is the card's top y; the card is 82px tall.
+// One usage card. The default GFX font is 6x8 per size step, so every band
+// below is stated in those terms and the gaps are what is left over — the old
+// layout put the reset line's top edge exactly on the bar's bottom edge, which
+// is why the text looked like it was sitting on top of it.
+//
+//   top +10 .. +50   the figure, size 5 (40px)
+//   top +14 .. +30   the window label, size 2, right aligned
+//   top +34 .. +42   the reset countdown, size 1, right aligned
+//   top +62 .. +74   the bar
+//   top +74 .. +88   bottom padding
+#define CARD_H 88
 static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
                       float pct, int resetMins) {
-  const int x = 8, w = 224, h = 82;
-  gfx->fillRoundRect(x, top, w, h, 8, C_PANEL);
+  const int x = 8, w = 224, pad = 14;
+  gfx->fillRoundRect(x, top, w, CARD_H, 10, C_PANEL);
 
   char pc[8];
   snprintf(pc, sizeof(pc), "%d%%", (int)lroundf(constrain(pct, 0.0f, 100.0f)));
-  uint8_t sz = gfxFitSize(pc, 150, 5);
-  gfx->setTextSize(sz);
+  gfx->setTextSize(gfxFitSize(pc, w - pad * 2 - 70, 5));
   gfx->setTextColor(C_WHITE);
-  gfx->setCursor(x + 14, top + 10);
+  gfx->setCursor(x + pad, top + 10);
   gfx->print(pc);
 
-  int lw = gfxTextW(label, 2);
   gfx->setTextSize(2);
   gfx->setTextColor(C_DIM);
-  gfx->setCursor(x + w - lw - 14, top + 12);
+  gfx->setCursor(x + w - pad - gfxTextW(label, 2), top + 14);
   gfx->print(label);
-
-  int bx = x + 14, by = top + 52, bw = w - 28, bh = 12;
-  gfx->fillRoundRect(bx, by, bw, bh, bh / 2, C_BARBG);
-  int fw = (int)(bw * constrain(pct, 0.0f, 100.0f) / 100.0f);
-  if (fw >= bh)     gfx->fillRoundRect(bx, by, fw, bh, bh / 2, barColor(pct));
-  else if (fw > 0)  gfx->fillRect(bx, by, fw, bh, barColor(pct));
 
   char rs[16], line[28];
   fmtReset(resetMins, rs, sizeof(rs));
-  snprintf(line, sizeof(line), "Resets in %s", rs);
-  gfx->setTextSize(2);
+  snprintf(line, sizeof(line), "resets %s", rs);
+  gfx->setTextSize(1);
   gfx->setTextColor(C_DIM);
-  gfx->setCursor(x + 14, top + 64);
+  gfx->setCursor(x + w - pad - gfxTextW(line, 1), top + 34);
   gfx->print(line);
+
+  const int bx = x + pad, by = top + 62, bw = w - pad * 2, bh = 12;
+  gfx->fillRoundRect(bx, by, bw, bh, bh / 2, C_BARBG);
+  const int fw = (int)(bw * constrain(pct, 0.0f, 100.0f) / 100.0f);
+  if (fw >= bh)    gfx->fillRoundRect(bx, by, fw, bh, bh / 2, barColor(pct));
+  else if (fw > 0) gfx->fillRect(bx, by, fw, bh, barColor(pct));
 }
 
-// The face above the bars. A quarter scale puts the eye line at y=21 and the
-// widest squint inside y=11..31, clear of the 5h meter at y=50; the box is
-// centred, so it never reaches the status flag at x=228.
+// The header: a title with the live face beside it, the pair centred as one
+// group. At 32% the eyes sit at y=16..35, so a size-2 title at y=17 shares
+// their centre line, and the widest squint stays well above the first card at
+// y=48. The group ends at x=201, clear of the status flag at x=228.
 #define FACE_MINI_PCT 32
-#define FACE_MINI_X   ((TFT_WIDTH - FACE_W * FACE_MINI_PCT / 100) / 2)
-#define FACE_MINI_Y   2
+#define FACE_MINI_X   125
+#define FACE_MINI_Y     0
+#define HDR_TITLE_X    58
+#define HDR_TITLE_Y    17
+#define CARD1_TOP      48
+#define CARD2_TOP     144
 
 // Rest between routines on the stats screen, as a multiple of the idle
 // screen's. At 1 the eyes do something every second or three, which is right
@@ -144,8 +163,12 @@ static void drawUsage(const UsageData& u, bool fullRepaint) {
     s_facePrimed = false;   // force a full redraw next time the idle face shows
     gfx->fillScreen(C_BLACK);
 
-    // Header: the live face, small and centred. Drawn before the meters so its
-    // own clear cannot take the top of the 5h bar with it.
+    // Header: the title, then the live face beside it. Drawn before the meters
+    // so the face's own clear cannot take the top of the first card with it.
+    gfx->setTextSize(2);
+    gfx->setTextColor(C_DIM);
+    gfx->setCursor(HDR_TITLE_X, HDR_TITLE_Y);
+    gfx->print("USAGE");
     drawMini(/*full=*/true);
     s_flagShown = false;
   }
@@ -169,8 +192,8 @@ static void drawUsage(const UsageData& u, bool fullRepaint) {
     s_flagShown = showFlag;
   }
 
-  drawMeter(gfx, 50,  "5h", u.sessionPct, u.sessionResetMin);
-  drawMeter(gfx, 138, "7d", u.weeklyPct,  u.weeklyResetMin);
+  drawMeter(gfx, CARD1_TOP, "5h", u.sessionPct, u.sessionResetMin);
+  drawMeter(gfx, CARD2_TOP, "7d", u.weeklyPct,  u.weeklyResetMin);
 }
 
 // Idle screen: the Claude face on a full-screen terra-cotta field. `restart`
@@ -267,7 +290,7 @@ void UsageMode::service(const Settings& s) {
     // The face runs on the stats screen too, so its clock has to advance here
     // as well as on the idle screen — at a much longer rest, because the eyes
     // are a detail on this screen rather than the whole of it.
-    faceSetPace(FACE_MINI_REST_MULT);
+    faceSetPace(FACE_MINI_REST_MULT, /*calm=*/true);
     const bool posed = faceTick(millis());
     if (needRender_) {
       drawUsage(u, fullRepaint);
@@ -284,7 +307,7 @@ void UsageMode::service(const Settings& s) {
       faceReset(millis(), micros());
       drawFace(/*restart=*/true);
     } else {
-      faceSetPace(1);                 // the idle screen is the face's own
+      faceSetPace(1, /*calm=*/false);   // the idle screen is the face's own
       if (faceTick(millis())) drawFace(/*restart=*/false);
     }
   }
