@@ -77,16 +77,18 @@ static uint16_t barColor(float pct) {
 // layout put the reset line's top edge exactly on the bar's bottom edge, which
 // is why the text looked like it was sitting on top of it.
 //
-//   top +8  .. +40   the figure, size 4 (32px), left
-//   top +10 .. +34   the window label, size 3 (24px), right
+//   top +12 .. +36   the figure, size 3 (24px), left
+//   top +14 .. +30   the window label, size 2 (16px), right
 //   top +44 .. +60   the reset countdown, size 2 (16px), right, on its own row
-//   top +64 .. +76   the bar
-//   top +76 .. +88   bottom padding
+//   top +66 .. +74   the bar, 8px
+//   top +74 .. +88   bottom padding
 //
-// The figure was size 5 against a size-1 countdown, which made everything that
-// says what the figure *means* — 5h, 7d, when it resets — too small to read at
-// desk distance. Trading one step of the figure for two of everything else is
-// the better bargain: the bar already carries the at-a-glance reading.
+// The figure started at size 5 against a size-1 countdown, which made everything
+// that says what the figure *means* — 5h, 7d, when it resets — too small to read
+// at desk distance. Closing that gap from both ends, rather than only enlarging
+// the small text, is what keeps the card calm: the bar carries the at-a-glance
+// reading, so the number does not have to be the loudest thing on it, and a
+// thinner bar reads as a gauge rather than a block of colour.
 #define CARD_H 88
 static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
                       float pct, int resetMins) {
@@ -95,14 +97,14 @@ static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
 
   char pc[8];
   snprintf(pc, sizeof(pc), "%d%%", (int)lroundf(constrain(pct, 0.0f, 100.0f)));
-  gfx->setTextSize(gfxFitSize(pc, 110, 4));
+  gfx->setTextSize(gfxFitSize(pc, 110, 3));
   gfx->setTextColor(C_WHITE);
-  gfx->setCursor(x + pad, top + 8);
+  gfx->setCursor(x + pad, top + 12);
   gfx->print(pc);
 
-  gfx->setTextSize(3);
+  gfx->setTextSize(2);
   gfx->setTextColor(C_ACCENT);
-  gfx->setCursor(x + w - pad - gfxTextW(label, 3), top + 10);
+  gfx->setCursor(x + w - pad - gfxTextW(label, 2), top + 14);
   gfx->print(label);
 
   char rs[16], line[28];
@@ -113,7 +115,7 @@ static void drawMeter(Arduino_GFX* gfx, int top, const char* label,
   gfx->setCursor(x + w - pad - gfxTextW(line, 2), top + 44);
   gfx->print(line);
 
-  const int bx = x + pad, by = top + 64, bw = w - pad * 2, bh = 12;
+  const int bx = x + pad, by = top + 66, bw = w - pad * 2, bh = 8;
   gfx->fillRoundRect(bx, by, bw, bh, bh / 2, C_BARBG);
   const int fw = (int)(bw * constrain(pct, 0.0f, 100.0f) / 100.0f);
   if (fw >= bh)    gfx->fillRoundRect(bx, by, fw, bh, bh / 2, barColor(pct));
