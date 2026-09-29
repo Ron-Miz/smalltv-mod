@@ -52,6 +52,13 @@ class UsageMode : public DisplayMode {
 
 extern UsageMode g_usageMode;
 
+// Poll the daemon, whatever is on screen. This cannot live inside service():
+// the carousel only gives the usage screen a slot when it has numbers, so a
+// poll behind that gate would never re-hear from a daemon that went quiet — no
+// slot, no service, no poll, no numbers, and the bars never come back while a
+// session is live. Self-throttled to pollSec, so calling it every tick is free.
+void usagePoll(const Settings& s);
+
 // True when the meter actually has numbers to show. The idle face is a
 // screensaver, not a feature, and a rotation that stops on a screensaver — or
 // on "waiting..." — is dead air in the same way a stop on an empty session list

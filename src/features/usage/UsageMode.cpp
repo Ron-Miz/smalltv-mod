@@ -229,6 +229,13 @@ void UsageMode::rememberContent(const UsageData& u) {
   strlcpy(lastStatus_, u.status, sizeof(lastStatus_));
 }
 
+void usagePoll(const Settings& s) {
+  // Pull mode: poll the daemon when a Usage URL is set. Push mode: leave it
+  // blank and the daemon POSTs to /api/usage (for networks where the device
+  // can't reach the PC). Either way usageGet() drives the render.
+  if (s.usage.usageUrl.length() >= 8) usageService(s);
+}
+
 // Worth a carousel stop only with fresh *and* parseable numbers on hand. Both
 // halves matter: stale data gives the idle face, and a reading that arrived but
 // did not parse gives a near-empty screen reading "waiting...", and neither is
@@ -260,11 +267,7 @@ void UsageMode::invalidate(const Settings& s) {
 }
 
 void UsageMode::service(const Settings& s) {
-  // Pull mode: poll the daemon when a Usage URL is set. Push mode: leave it blank
-  // and the daemon POSTs to /api/usage (for networks where the device can't reach
-  // the PC). Either way usageGet() drives the render below.
-  if (s.usage.usageUrl.length() >= 8) usageService(s);
-
+  // The poll runs from loop() for every tick, not from here — see usagePoll().
   const UsageData& u = usageGet();
 
   // Considered stale after ~6 missed polls (plus a grace) — then show the face.

@@ -420,6 +420,13 @@ void loop() {
   clockService(g_settings);
   appApplyBrightness();
 
+#if WITH_USAGE
+  // Outside the mode dispatch on purpose: the carousel gives the usage screen a
+  // slot only when it has numbers, so its poll must not be gated on being the
+  // mode on screen, or a daemon that went quiet could never be re-heard from.
+  usagePoll(g_settings);
+#endif
+
   // On expiry the carousel dwell is credited back the time it was hidden, so it
   // resumes on the same feature with the same remaining slice. heldMs() spans
   // the whole run rather than the last request in it, so a queue that chained
