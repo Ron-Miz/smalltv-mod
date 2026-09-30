@@ -25,6 +25,9 @@
 #if WITH_SESSIONS
 #include "features/sessions/Sessions.h"
 #endif
+#if WITH_PANEL
+#include "features/panel/Panel.h"
+#endif
 #include "SettingsTransaction.h"
 #if WITH_HA
 #include "HaScreens.h"
@@ -94,6 +97,7 @@ static void handleGetConfig() {
   feat["ha"]     = (bool)WITH_HA;
   feat["theme"]  = (bool)WITH_THEME;
   feat["sessions"] = (bool)WITH_SESSIONS;
+  feat["panel"]    = (bool)WITH_PANEL;
   // WireGuard is a per-chip decision rather than a per-feature one: it is
   // compiled only where the image has room for it (the ESP32-C2 build).
 #if defined(SMALLTV_WIREGUARD)
@@ -450,6 +454,58 @@ static void handleSessionsGet() {
   sendJson(doc);
 }
 
+#if WITH_PANEL
+// A whole page, pushed as data:
+//   {"id":"ctx","title":"CONTEXT","ttlSec":120,
+//    "rows":[{"label":"smalltv-mod","bar":76,"value":"291k"}]}
+// A row carrying "bar" is a proportion; otherwise it is a state light and
+// "dot" (or "color") names its colour. The same id replaces rather than adds,
+// {"drop":true} forgets it, and a panel nothing refreshes within ttlSec leaves
+// the carousel on its own — which is what stops a script you stopped from
+// leaving a frozen page in the rotation.
+static void handlePanelPush() {
+  if (!server.hasArg("plain")) { server.send(400, "text/plain", "no body"); return; }
+  String err;
+  if (!panelApply(server.arg("plain"), &err)) {
+    String body = String("{\"ok\":false,\"error\":\"") + err + "\"}";
+    server.send(400, "application/json", body);
+    return;
+  }
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handlePanelsGet() {
+  if (!requireAuth()) return;
+  panelExpire();
+  JsonDocument doc;
+  JsonArray arr = doc["panels"].to<JsonArray>();
+  const PanelData* ps = panelAll();
+  const uint32_t now = millis();
+  for (uint8_t i = 0; i < PANEL_MAX; i++) {
+    if (!ps[i].used) continue;
+    JsonObject o = arr.add<JsonObject>();
+    o["id"]     = ps[i].id;
+    o["title"]  = ps[i].title;
+    o["ageSec"] = (uint32_t)((now - ps[i].seenMs) / 1000);
+    o["ttlSec"] = (uint32_t)(ps[i].ttlMs / 1000);
+    JsonArray rows = o["rows"].to<JsonArray>();
+    for (uint8_t r = 0; r < ps[i].nRows; r++) {
+      JsonObject ro = rows.add<JsonObject>();
+      ro["label"] = ps[i].rows[r].label;
+      ro["value"] = ps[i].rows[r].value;
+      if (ps[i].rows[r].kind == PANEL_ROW_BAR) ro["bar"] = ps[i].rows[r].bar;
+    }
+  }
+  sendJson(doc);
+}
+
+static void handlePanelsClear() {
+  if (!requireAuth()) return;
+  panelClear();
+  server.send(200, "application/json", "{\"ok\":true}");
+}
+#endif  // WITH_PANEL
+
 static void handleSessionsClear() {
   if (!requireAuth()) return;
   sessionsClear();
@@ -597,6 +653,11 @@ void webPortalBegin(Settings& settings) {
   server.on("/api/session",        HTTP_POST, handleSessionPush);
   server.on("/api/sessions",       HTTP_GET,  handleSessionsGet);
   server.on("/api/sessions/clear", HTTP_POST, handleSessionsClear);
+#endif
+#if WITH_PANEL
+  server.on("/api/panel",        HTTP_POST, handlePanelPush);    // a page, pushed as data
+  server.on("/api/panels",       HTTP_GET,  handlePanelsGet);
+  server.on("/api/panels/clear", HTTP_POST, handlePanelsClear);
 #endif
 #if WITH_HA
   server.on("/api/ha/clear", HTTP_POST, handleHaClear);  // purge HA screens (device + broker retained)

@@ -14,6 +14,9 @@ class SessionsMode : public DisplayMode {
   const char* id() const override { return "sessions"; }
   uint8_t modeConst() const override { return MODE_SESSIONS; }
 
+  // A stop on "no sessions" is dead air; the board earns its slot by having rows.
+  bool carouselReady(const Settings& s) const override;
+
   void begin(const Settings& s) override;
   void service(const Settings& s) override;
   void invalidate(const Settings& s) override;

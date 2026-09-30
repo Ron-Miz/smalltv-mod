@@ -170,6 +170,11 @@ void SessionsMode::blinkDots() {
   }
 }
 
+bool SessionsMode::carouselReady(const Settings& s) const {
+  (void)s;
+  return sessionsCount() > 0;
+}
+
 void SessionsMode::begin(const Settings& s) {
   (void)s;
   primed_ = false;

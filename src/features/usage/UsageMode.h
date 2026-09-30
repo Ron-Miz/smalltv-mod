@@ -13,6 +13,9 @@ class UsageMode : public DisplayMode {
   const char* id() const override { return "usage"; }
   uint8_t     modeConst() const override { return MODE_USAGE; }
 
+  // Numbers on hand, or nothing worth a stop: the idle face is a screensaver.
+  bool carouselReady(const Settings& s) const override;
+
   void begin(const Settings& s) override;
   void service(const Settings& s) override;
   void invalidate(const Settings& s) override;

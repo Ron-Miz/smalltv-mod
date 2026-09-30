@@ -142,6 +142,7 @@
 #define MODE_THEME     6             // declarative installed clock faces
 #define MODE_HA        5             // Home Assistant screens pushed over MQTT
 #define MODE_SESSIONS  7             // live Claude Code sessions, fed by hooks
+#define MODE_PANEL     8             // generic pushed panels (features/panel)
 #define DEFAULT_MODE MODE_STOCKS
 #define DEFAULT_CAROUSEL_SEC 30      // per-mode dwell in carousel
 
@@ -241,6 +242,28 @@
 #ifndef WITH_HA
 #define WITH_HA 1
 #endif
+// Generic panels (MODE_PANEL, features/panel): a page whose whole content is
+// pushed as JSON, so a new screen is a script on the PC rather than a firmware
+// build. Rows are a dot or a bar with a label and a value — enough for the
+// things worth glancing at, and nothing that needs a renderer of its own.
+#ifndef WITH_PANEL
+#define WITH_PANEL 1
+#endif
+
+// Four panels of six rows. Fixed tables, like the session table: ~840 bytes of
+// the shared arena, and no fragmentation however often the pushes arrive.
+#define PANEL_MAX         4
+#define PANEL_ID_LEN      8
+#define PANEL_TITLE_LEN  12
+#define PANEL_ROWS_MAX    6
+#define PANEL_LABEL_LEN  13
+#define PANEL_VALUE_LEN   7
+// A panel with no fresh push leaves the carousel rather than rotating a frozen
+// page — the pusher names its own lifetime, clamped to something sane.
+#define PANEL_TTL_MIN_SEC   15
+#define PANEL_TTL_MAX_SEC 3600
+#define PANEL_TTL_DEF_SEC  300
+
 #ifndef WITH_SESSIONS
 #define WITH_SESSIONS 1
 #endif

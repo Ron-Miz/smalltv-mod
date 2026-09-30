@@ -23,6 +23,14 @@ class DisplayMode {
   // The MODE_* constant this mode answers to (matched against settings.mode).
   virtual uint8_t modeConst() const = 0;
 
+  // Has this feature anything worth a carousel stop right now? The rotation is
+  // for pages with something on them: the sessions board with no sessions, the
+  // usage meter with no numbers (its idle face is a screensaver, not a feature)
+  // and a panel slot nothing is pushing to are all dead air, and a fifteen
+  // second stop on dead air reads as a bug. Features that always have something
+  // to say keep the default.
+  virtual bool carouselReady(const Settings& s) const { (void)s; return true; }
+
   virtual void begin(const Settings& s) {}          // one-time init at boot
   virtual void service(const Settings& s) {}        // every loop tick: fetch + render
   virtual void invalidate(const Settings& s) {}     // settings changed: re-init + repaint

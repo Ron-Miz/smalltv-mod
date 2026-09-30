@@ -43,6 +43,10 @@
 #include "features/sessions/SessionsMode.h"
 #include "features/sessions/Sessions.h"
 #endif
+#if WITH_PANEL
+#include "features/panel/PanelMode.h"
+#include "features/panel/Panel.h"
+#endif
 
 // ---- mode registry --------------------------------------------------------
 // The compiled-in features, in display order. main.cpp holds no per-feature
@@ -63,11 +67,23 @@ static DisplayMode* kModes[] = {
 #if WITH_SESSIONS
   &g_sessionsMode,
 #endif
+#if WITH_PANEL
+  // One slot each, so every pushed panel gets its own stop with a full dwell.
+  // Slots nothing is pushing to report themselves not ready and are skipped.
+  &g_panelModes[0], &g_panelModes[1], &g_panelModes[2], &g_panelModes[3],
+#endif
 #if WITH_THEME
   &g_themeMode,
 #endif
 };
 static const size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
+
+#if WITH_PANEL
+// The registry above lists the panel slots one by one, because it is a static
+// initialiser and cannot loop. Say so, rather than letting a changed PANEL_MAX
+// quietly leave slots unreachable.
+static_assert(PANEL_MAX == 4, "kModes lists the panel slots explicitly; keep them in step");
+#endif
 
 // ---- carousel -------------------------------------------------------------
 // MODE_CAROUSEL rotates through the ticked features. Switches call wake() on
@@ -75,28 +91,26 @@ static const size_t kModeCount = sizeof(kModes) / sizeof(kModes[0]);
 static size_t   g_carIdx = 0;
 static uint32_t g_carSwitch = 0;
 
+// Two gates on a carousel stop: the tick in the web UI, which is the user's
+// choice, and whether the feature has anything on it right now, which is the
+// feature's own answer (DisplayMode::carouselReady).
 static bool carouselHas(const Settings& s, const DisplayMode* m) {
+  bool ticked;
   switch (m->modeConst()) {
-    case MODE_STOCKS: return s.carouselTicker;
-#if WITH_USAGE
-    // Ticked *and* holding numbers. With the daemon quiet the usage screen is
-    // the idle face, and a rotation that stops on a screensaver for fifteen
-    // seconds before moving on reads as a third tab that nobody asked for.
-    case MODE_USAGE:  return s.carouselUsage && usageHasNumbers(s);
-#else
-    case MODE_USAGE:  return s.carouselUsage;
-#endif
-#if WITH_SESSIONS
-    // Ticked *and* non-empty: a carousel stop on "no sessions" is dead air.
-    case MODE_SESSIONS: return s.carouselSessions && sessionsCount() > 0;
-#endif
-    case MODE_RADAR:  return s.carouselRadar;
+    case MODE_STOCKS:   ticked = s.carouselTicker;   break;
+    case MODE_USAGE:    ticked = s.carouselUsage;    break;
+    case MODE_SESSIONS: ticked = s.carouselSessions; break;
+    case MODE_RADAR:    ticked = s.carouselRadar;    break;
 #if WITH_HA
-    case MODE_HA:     return s.carouselHa;
+    case MODE_HA:       ticked = s.carouselHa;       break;
 #endif
-    case MODE_THEME:  return false; // explicitly selected, not in the existing carousel
-    default:          return true;
+    // A panel is in the rotation because something on the PC is pushing it, and
+    // out of it when that stops. There is no tick to keep in step with it.
+    case MODE_PANEL:    ticked = true;               break;
+    case MODE_THEME:    return false;   // explicitly selected, never rotated
+    default:            ticked = true;               break;
   }
+  return ticked && m->carouselReady(s);
 }
 
 // Where to park when nothing ticked has anything to show: the feature that owns
@@ -366,6 +380,9 @@ void setup() {
 #endif
 
   Serial.println("[boot] modes");
+#if WITH_PANEL
+  panelModesBind();   // tell each panel instance which slot it draws
+#endif
   for (size_t i = 0; i < kModeCount; i++) kModes[i]->begin(g_settings);
   Serial.println("[boot] done");
 
@@ -425,6 +442,11 @@ void loop() {
   // slot only when it has numbers, so its poll must not be gated on being the
   // mode on screen, or a daemon that went quiet could never be re-heard from.
   usagePoll(g_settings);
+#endif
+#if WITH_PANEL
+  // Same reasoning: a panel leaves the carousel when its push stops, so the
+  // sweep that notices cannot live in the panel's own service().
+  panelExpire();
 #endif
 
   // On expiry the carousel dwell is credited back the time it was hidden, so it

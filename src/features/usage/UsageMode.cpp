@@ -245,6 +245,8 @@ bool usageHasNumbers(const Settings& s) {
   return usageFresh(staleMs) && usageGet().valid;
 }
 
+bool UsageMode::carouselReady(const Settings& s) const { return usageHasNumbers(s); }
+
 // ---- DisplayMode ----------------------------------------------------------
 void UsageMode::begin(const Settings& s) {
   usageInit(s);
