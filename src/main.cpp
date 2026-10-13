@@ -91,6 +91,25 @@ static_assert(PANEL_MAX == 4, "kModes lists the panel slots explicitly; keep the
 static size_t   g_carIdx = 0;
 static uint32_t g_carSwitch = 0;
 
+#if WITH_PANEL
+// Is this panel id on the keep-out list? The list is a short comma-separated
+// string, walked in place: this runs for every panel slot on every tick, and a
+// substring() per slot per tick would churn the heap for nothing.
+static bool panelMuted(const Settings& s, const char* id) {
+  const char* list = s.carouselPanelsOff.c_str();
+  if (!*list || !id || !*id) return false;
+  const size_t n = strlen(id);
+  for (const char* p = list; *p; ) {
+    const char* e = strchr(p, ',');
+    const size_t len = e ? (size_t)(e - p) : strlen(p);
+    if (len == n && strncmp(p, id, n) == 0) return true;
+    if (!e) break;
+    p = e + 1;
+  }
+  return false;
+}
+#endif
+
 // Two gates on a carousel stop: the tick in the web UI, which is the user's
 // choice, and whether the feature has anything on it right now, which is the
 // feature's own answer (DisplayMode::carouselReady).
@@ -105,8 +124,13 @@ static bool carouselHas(const Settings& s, const DisplayMode* m) {
     case MODE_HA:       ticked = s.carouselHa;       break;
 #endif
     // A panel is in the rotation because something on the PC is pushing it, and
-    // out of it when that stops. There is no tick to keep in step with it.
+    // out of it when that stops — so what the web UI stores is the opposite of
+    // a tick: the ids to keep out. See panelMuted().
+#if WITH_PANEL
+    case MODE_PANEL:    ticked = !panelMuted(s, m->id()); break;
+#else
     case MODE_PANEL:    ticked = true;               break;
+#endif
     case MODE_THEME:    return false;   // explicitly selected, never rotated
     default:            ticked = true;               break;
   }

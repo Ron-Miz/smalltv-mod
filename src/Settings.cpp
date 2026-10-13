@@ -444,6 +444,7 @@ void Settings::setDefaults() {
   carouselSec = DEFAULT_CAROUSEL_SEC;
   carouselTicker = carouselUsage = carouselRadar = carouselHa = true;
   carouselSessions = true;
+  carouselPanelsOff = "";
   httpTimeout = DEFAULT_HTTP_TIMEOUT;
 
   brightness = DEFAULT_BRIGHTNESS;
@@ -533,6 +534,7 @@ void settingsToJson(const Settings& s, JsonObject root, bool includeSecrets) {
   root["carouselTicker"]    = s.carouselTicker;
   root["carouselUsage"]     = s.carouselUsage;
   root["carouselSessions"]  = s.carouselSessions;
+  root["carouselPanelsOff"] = s.carouselPanelsOff;
   root["carouselRadar"]     = s.carouselRadar;
   root["carouselHa"]        = s.carouselHa;
   root["httpTimeout"]       = s.httpTimeout;
@@ -618,6 +620,8 @@ void settingsApplyJson(Settings& s, JsonObjectConst root) {
   if (root["carouselTicker"].is<bool>())  s.carouselTicker = root["carouselTicker"];
   if (root["carouselUsage"].is<bool>())   s.carouselUsage = root["carouselUsage"];
   if (root["carouselSessions"].is<bool>()) s.carouselSessions = root["carouselSessions"];
+  if (root["carouselPanelsOff"].is<const char*>())
+    s.carouselPanelsOff = (const char*)root["carouselPanelsOff"];
   if (root["carouselRadar"].is<bool>())   s.carouselRadar = root["carouselRadar"];
   if (root["carouselHa"].is<bool>())      s.carouselHa = root["carouselHa"];
 

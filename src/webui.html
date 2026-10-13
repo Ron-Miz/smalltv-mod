@@ -286,6 +286,8 @@ small.hint{display:block;color:var(--mut);margin-top:5px;font-size:12px;line-hei
     <div class="chk"><input id="carouselSessions" type="checkbox"><label>Sessions</label></div>
     <div class="chk"><input id="carouselRadar" type="checkbox"><label>Radar</label></div>
     <div class="chk"><input id="carouselHa" type="checkbox"><label>Home Assistant</label></div>
+    <div id="carouselPanels"></div>
+    <small class="hint"><b>Pushed pages</b> (<code>POST /api/panel</code>) appear in this list as soon as something sends one — the context page is one of these. Each also leaves the rotation by itself when nothing refreshes it, so unticking is for hiding a page that is still being pushed.</small>
    </div>
    <small class="hint">Each name here is the tab that configures it. Pick the active feature, then set it up in its own tab. Carousel rotates through the ticked features.</small>
   </div>
@@ -752,6 +754,8 @@ function loadConfig(){return j('/api/config').then(function(c){C=c;
  sv('carouselSec',c.carouselSec||30);
  sc('carouselTicker',c.carouselTicker!==false); sc('carouselUsage',c.carouselUsage!==false); sc('carouselSessions',c.carouselSessions!==false); sc('carouselRadar',c.carouselRadar!==false);
  sc('carouselHa',c.carouselHa!==false);
+ PANELS_OFF=(c.carouselPanelsOff||'').split(',').filter(function(x){return x;});
+ loadPanels();
  // HA / MQTT slice
  var h=c.ha||{};
  sv('haBrokerHost',h.brokerHost); sv('haBrokerPort',h.brokerPort||1883);
@@ -836,11 +840,43 @@ function radarSrcChanged(){if(!$('radarSource'))return;var v=$('radarSource').va
  :(v==='adsbfi') ?'The device fetches <b>adsb.fi</b> directly over HTTPS (no key, ~1 req/s). Fine on the ESP32, but adsb.fi now sits behind Cloudflare and sends TLS records too large for the ESP8266 — pick adsb.lol or the webhook there.'
  :'The device requests <code>?lat=..&amp;lon=..&amp;dist=..</code> from your LAN proxy, which pre-filters the feed to a small JSON. Most reliable on the ESP8266.';}
 
+// Panels are discovered, not declared: the live ones come from /api/panels and
+// the hidden ones from the saved keep-out list, so a panel you unticked still
+// has a tick to put back after it has expired and been pushed again.
+var PANELS_OFF = [];
+function renderPanels(live){
+ var box=$('carouselPanels'); if(!box) return;
+ var ids=[], seen={};
+ (live||[]).forEach(function(p){ if(!seen[p.id]){seen[p.id]=p.title||p.id; ids.push(p.id);} });
+ PANELS_OFF.forEach(function(id){ if(!seen[id]){seen[id]=id; ids.push(id);} });
+ if(!ids.length){ box.innerHTML=''; return; }
+ box.innerHTML=ids.map(function(id){
+  var on=PANELS_OFF.indexOf(id)<0, t=seen[id];
+  var name=(t&&t!==id)?(t+' ('+id+')'):id;
+  return '<div class="chk"><input type="checkbox" data-panel="'+id+'"'+(on?' checked':'')+
+         '><label>'+name+'</label></div>';
+ }).join('');
+}
+function loadPanels(){
+ return j('/api/panels').then(function(d){ renderPanels(d.panels||[]); })
+                        .catch(function(){ renderPanels([]); });
+}
+function collectPanelsOff(){
+ var out=[];
+ document.querySelectorAll('#carouselPanels input[data-panel]').forEach(function(el){
+  if(!el.checked) out.push(el.getAttribute('data-panel'));
+ });
+ // Keep ids that are unticked but not currently listed, so hiding survives a
+ // panel that has expired and is not in the DOM to be read back.
+ PANELS_OFF.forEach(function(id){ if(out.indexOf(id)<0 && !document.querySelector('#carouselPanels input[data-panel="'+id+'"]')) out.push(id); });
+ return out.join(',');
+}
+
 function collect(){
  var o={mode:gv('mode'),
   carouselSec:parseInt(gv('carouselSec'))||30,
   carouselTicker:gc('carouselTicker'), carouselUsage:gc('carouselUsage'), carouselSessions:gc('carouselSessions'), carouselRadar:gc('carouselRadar'),
-  carouselHa:gc('carouselHa'),
+  carouselHa:gc('carouselHa'), carouselPanelsOff:collectPanelsOff(),
   brightness:parseInt(gv('brightness'))||0,
   rotation:parseInt(gv('rotation')),
   autoBrightness:gc('autoBrightness'),

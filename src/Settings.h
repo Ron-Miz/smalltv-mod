@@ -197,6 +197,11 @@ struct Settings {
   uint16_t carouselSec;
   bool carouselTicker, carouselUsage, carouselRadar, carouselHa;
   bool carouselSessions;
+  // Pushed panels have no fixed tick: their ids arrive at runtime and come and
+  // go, so what persists is the short list of ids to keep OUT of the rotation.
+  // Absent from the list means shown, so a panel works the moment it is pushed
+  // and a tick survives the panel disappearing and coming back.
+  String carouselPanelsOff;
 
   // --- Shared HTTP / display ---
   uint16_t httpTimeout; // ms
